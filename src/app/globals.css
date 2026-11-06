@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+@theme {
+  --color-night: #0a0b09;
+  --color-deep: #11130f;
+  --color-panel: #151713;
+  --color-steel: #1e2a08;
+  --color-lilac: #c4f135;
+  --color-lilac-soft: #dff99a;
+  --color-ice: #d8d8de;
+  --color-ash: #a6a6b0;
+  --color-mist: #b9b9c2;
+  --color-ivory: #f3f3f5;
+  --color-gold: #d4a43a;
+  --font-sans: "Onest", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-display: "Unbounded", "Onest", sans-serif;
+}
+
+html { background: var(--color-night); color: var(--color-ivory); }
+html[dir="rtl"] body { font-family: "IBM Plex Sans Arabic", "Onest", sans-serif; }
+body { margin: 0; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+*:focus-visible { outline: 2px solid var(--color-lilac); outline-offset: 2px; }
+::selection { background: rgba(196, 241, 53, .35); }
+
+/* surfaces */
+.lx-surface { background: rgba(20,20,23,.52); border: 1px solid rgba(196, 241, 53, .07); border-radius: 22px; }
+.lx-surface-strong { background: rgba(20,20,23,.86); border: 1px solid rgba(196, 241, 53, .1); border-radius: 22px; }
+.lx-input { width: 100%; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(196, 241, 53, .18); background: #17171a; color: var(--color-ivory); }
+textarea.lx-input { padding: 12px 14px; min-height: 110px; }
+.lx-input::placeholder { color: #74747c; }
+input[type="range"] { accent-color: var(--color-lilac); width: 100%; }
+
+.lx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 24px; border-radius: 999px; font-weight: 600; font-size: 15px; letter-spacing: .01em; cursor: pointer; transition: transform .2s, background .2s, border-color .2s, opacity .2s; }
+.lx-btn:hover { transform: translateY(-1px); }
+.lx-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.lx-btn-primary { background: var(--color-lilac); color: #0a0b09; border: 0; box-shadow: 0 10px 30px -12px rgba(196,241,53,.6); }
+.lx-btn-primary:hover { background: #d4ff4a; }
+.lx-btn-dark { background: #0a0b09; color: #f2f5ea; border: 0; }
+.lx-btn-ghost { background: rgba(11,11,13,.35); color: var(--color-ivory); border: 1px solid rgba(238, 240, 255, .28); }
+.lx-btn-sm { min-height: 40px; padding: 0 16px; font-size: 14px; }
+[dir="rtl"] .lx-arrow { transform: scaleX(-1); }
+
+/* motion */
+@keyframes lx-tick { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes lx-tick-rev { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+@keyframes lx-shine { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes lx-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes lx-draw { 0% { stroke-dashoffset: 720; } 45% { stroke-dashoffset: 0; } 90% { stroke-dashoffset: 0; opacity: 1; } 100% { opacity: 0; stroke-dashoffset: 0; } }
+.lx-tick { animation: lx-tick 34s linear infinite; }
+.lx-tick-rev { animation: lx-tick-rev 40s linear infinite; }
+.lx-w1 { animation: lx-tick 20s linear infinite; }
+.lx-w2 { animation: lx-tick-rev 28s linear infinite; }
+.lx-up { animation: lx-up .8s cubic-bezier(.2, .7, .2, 1) both; }
+.lx-sig { stroke-dasharray: 720; stroke-dashoffset: 720; animation: lx-draw 7s cubic-bezier(.65, 0, .35, 1) .4s infinite; }
+.lx-outline { color: transparent; -webkit-text-stroke: 1px rgba(215,215,222,.55); }
+.lx-div { height: 3px; width: 100%; background: linear-gradient(90deg, rgba(170,170,180,.12) 0%, rgba(196,241,53,.9) 30%, rgba(243,243,245,.95) 50%, rgba(196,241,53,.9) 70%, rgba(170,170,180,.12) 100%); background-size: 200% 100%; animation: lx-shine 6s linear infinite; box-shadow: 0 0 14px rgba(196,241,53,.35); }
+.lx-uv img, .lx-uv svg { filter: drop-shadow(0 0 6px #a8f4ff) drop-shadow(0 0 18px #6fd8ff); }
+@supports (animation-timeline: view()) {
+  .lx-reveal { animation: lx-up linear both; animation-timeline: view(); animation-range: entry 0% cover 28%; }
+}
+@keyframes lx-draw-art { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes lx-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lx-float { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-10px) rotate(4deg); } }
+.lx-draw-art { stroke-dasharray: 1; stroke-dashoffset: 1; animation: lx-draw-art 7s cubic-bezier(.45, 0, .25, 1) .3s forwards; }
+.lx-fade-art { opacity: 0; animation: lx-fade 1.6s ease 5.5s forwards; }
+.lx-float { animation: lx-float 14s ease-in-out infinite; }
+/* Brand motion (ticker, waves, dividers) keeps running, slower, for reduced-motion users. */
+@media (prefers-reduced-motion: reduce) {
+  .lx-up, .lx-sig, .lx-reveal, .lx-float { animation: none !important; stroke-dashoffset: 0; }
+  .lx-draw-art { animation: none !important; stroke-dashoffset: 0; }
+  .lx-fade-art { animation: none !important; opacity: 1; }
+  .lx-tick { animation-duration: 70s; }
+  .lx-tick-rev { animation-duration: 80s; }
+}
+
+/* print: only the stencil sheet */
+@media print {
+  body * { visibility: hidden !important; }
+  .lx-print, .lx-print * { visibility: visible !important; }
+  .lx-print { position: absolute; left: 0; top: 0; background: #fff; }
+  @page { margin: 10mm; }
+}
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Light display cards: soft white so content stands out from the red/black smoke. */
+.lx-card-light {
+  background: linear-gradient(180deg, #f6f6f8 0%, #e9e9ee 100%);
+  color: #141416;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 24px 50px -28px rgba(0, 0, 0, 0.8);
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+}
+a.lx-card-light:hover { transform: translateY(-4px); box-shadow: 0 34px 60px -26px rgba(196,241,53, 0.45); }
+.lx-card-light :where(.text-mist, .text-ash) { color: #5b5b66; }
+.lx-card-light :where(.text-ivory, .text-white) { color: #141416; }
+.lx-card-light :where(.text-lilac-soft, .text-\[\#c4f135\]) { color: #4f6b0a; }
+.lx-card-light svg path[stroke="#dff99a"] { stroke: #4f6b0a; }
+.lx-card-light .bg-panel { background: #141416; color: #f3f3f5; }
+.lx-card-light .bg-panel :where(.text-mist, .text-ash) { color: #b9b9c2; }
+
+@keyframes lx-hero-zoom { from { transform: scale(1.08); } to { transform: scale(1); } }
+.lx-hero-zoom { animation: lx-hero-zoom 14s ease-out both; }
+
+/* LUMINK lime edition */
+.lx-bracket { position: relative; display: inline-block; width: 22px; height: 22px; flex: none; }
+.lx-bracket::before, .lx-bracket::after { content: ""; position: absolute; width: 9px; height: 9px; border-color: var(--color-lilac); border-style: solid; }
+.lx-bracket::before { top: 0; left: 0; border-width: 2px 0 0 2px; }
+.lx-bracket::after { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+.lx-bracket-end::before { left: auto; right: 0; border-width: 2px 2px 0 0; }
+.lx-bracket-end::after { right: auto; left: 0; border-width: 0 0 2px 2px; }
+.lx-outline-dark { color: transparent; -webkit-text-stroke: 2px #0a0b09; }
+.lx-grain { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E"); mix-blend-mode: multiply; }
+@keyframes lx-spin { to { transform: rotate(360deg); } }
+.lx-spin-slow { animation: lx-spin 28s linear infinite; }
+.lx-spin-slow-rev { animation: lx-spin 34s linear infinite reverse; }
+@keyframes lx-sway { 0%, 100% { transform: perspective(900px) rotateY(-14deg); } 50% { transform: perspective(900px) rotateY(14deg); } }
+.lx-sway { animation: lx-sway 7s ease-in-out infinite; transform-origin: 50% 80%; }
+@media (prefers-reduced-motion: reduce) { .lx-spin-slow, .lx-spin-slow-rev, .lx-sway { animation: none; } }
+@keyframes lx-drip { 0% { transform: translateY(-120%); } 100% { transform: translateY(110vh); } }
+.lx-drip { animation: lx-drip 6s cubic-bezier(.5, 0, .9, .6) infinite; }
+@media (prefers-reduced-motion: reduce) { .lx-drip { animation: none; display: none; } }
+
+/* Home v3 */
+@keyframes lx-needle { 0%, 100% { transform: translateY(-46px); } 50% { transform: translateY(0); } }
+.lx-needle { animation: lx-needle .14s linear infinite; }
+@keyframes lx-kenburns { from { transform: scale(1); } to { transform: scale(1.06); } }
+.lx-kenburns { animation: lx-kenburns 7s ease-out both; }
+@keyframes lx-seal { to { transform: rotate(360deg); } }
+.lx-seal { animation: lx-seal 28s linear infinite; }
+@keyframes lx-rise { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+.lx-rise { animation: lx-rise .9s cubic-bezier(.2,.7,.2,1) both; }
+@media (prefers-reduced-motion: reduce) { .lx-needle, .lx-kenburns, .lx-seal, .lx-rise { animation: none; } }
+
+/* hero photo: sharp in the middle, dissolving into the black at every edge */
+.lx-feather {
+  -webkit-mask-image: radial-gradient(ellipse 60% 66% at 58% 46%, #000 38%, rgba(0,0,0,.55) 66%, transparent 100%);
+  mask-image: radial-gradient(ellipse 60% 66% at 58% 46%, #000 38%, rgba(0,0,0,.55) 66%, transparent 100%);
+}
+@media (max-width: 767px) {
+  .lx-feather, [dir="rtl"] .lx-feather {
+    -webkit-mask-image: radial-gradient(ellipse 80% 42% at 50% 74%, #000 30%, rgba(0,0,0,.5) 62%, transparent 100%);
+    mask-image: radial-gradient(ellipse 80% 42% at 50% 74%, #000 30%, rgba(0,0,0,.5) 62%, transparent 100%);
+  }
+}
+
+/* footer artwork: ink drips from the machine onto the logo */
+.lx-drip { animation: lx-drip 2.8s cubic-bezier(.55,0,.85,.4) infinite; transform-box: fill-box; transform-origin: center; }
+.lx-drip-bead { animation: lx-bead 2.8s ease-in-out infinite; transform-box: fill-box; transform-origin: top center; }
+@keyframes lx-drip {
+  0%, 38% { transform: translateY(0) scale(.2); opacity: 0; }
+  42% { transform: translateY(0) scale(1); opacity: 1; }
+  70% { transform: translateY(34px) scaleY(1.15); opacity: 1; }
+  74%, 100% { transform: translateY(38px) scale(1.4, .2); opacity: 0; }
+}
+@keyframes lx-bead { 0% { transform: scale(.4); } 38% { transform: scale(1.1); } 42%, 100% { transform: scale(.4); } }
+@media (prefers-reduced-motion: reduce) { .lx-drip, .lx-drip-bead { animation: none; } .lx-drip { opacity: 0; } }
