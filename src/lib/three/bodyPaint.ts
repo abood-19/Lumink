@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { acceleratedRaycast, computeBoundsTree } from "three-mesh-bvh";
+import { FACE, buildEyes, skinChunks } from "./humanize";
 
 /**
  * LUMINK body studio engine.
@@ -97,6 +98,47 @@ const PROJ_VERT = /* glsl */ `
     gl_Position = vec4((uv + vec2(uShift, 0.0)) * 2.0 - 1.0, 0.0, 1.0);
   }
 `;
+
+/* Wrap decal: the design is laid around the body part like a sleeve (cylindrical coordinates around the
+   limb's own axis), sampled straight from the design image — no camera projection, so it never smears
+   where the surface turns away and it continues correctly round the side and back. */
+const DECAL_VERT = /* glsl */ `
+  uniform vec3 uA; uniform vec3 uU; uniform vec3 uV; uniform vec3 uW;
+  uniform float uShift;
+  varying vec2 vUv2;
+  varying vec3 vQ;   // (along axis, toward design, sideways)
+  void main() {
+    vUv2 = uv;
+    vec3 d = position - uA;
+    vQ = vec3(dot(d, uU), dot(d, uV), dot(d, uW));
+    gl_Position = vec4((uv + vec2(uShift, 0.0)) * 2.0 - 1.0, 0.0, 1.0);
+  }
+`;
+const DECAL_FRAG = /* glsl */ `
+  uniform sampler2D uBase;
+  uniform sampler2D uDesign;
+  uniform float uR;        // radius at the design centre
+  uniform float uT0;       // along-axis position of the design centre
+  uniform vec2 uSize;      // design width / height in world units
+  uniform vec2 uRot;       // cos, sin
+  uniform float uSpan;     // max |angle| painted
+  varying vec2 vUv2;
+  varying vec3 vQ;
+  void main() {
+    vec4 base = texture2D(uBase, vUv2);
+    float rad = length(vQ.yz);
+    float ang = atan(vQ.z, vQ.y);
+    // only the skin of this limb (not another body part that happens to sit inside the box)
+    if (abs(ang) > uSpan || abs(rad - uR) > uR * 0.6 + 0.02) { gl_FragColor = base; return; }
+    vec2 l = vec2(ang * uR, vQ.x - uT0);
+    vec2 d = vec2(l.x * uRot.x - l.y * uRot.y, l.x * uRot.y + l.y * uRot.x);
+    vec2 uv = d / uSize + 0.5;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) { gl_FragColor = base; return; }
+    vec4 s = texture2D(uDesign, uv);            // premultiplied
+    gl_FragColor = s + base * (1.0 - s.a);
+  }
+`;
+
 const PROJ_FRAG = /* glsl */ `
   uniform sampler2D uBase;
   uniform sampler2D uStroke;
@@ -204,8 +246,8 @@ export class BodyStudio {
     this.host = host;
     this.mobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && !/Windows/.test(navigator.userAgent));
     this.maxUndo = this.mobile ? 5 : 12;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.mobile ? 2 : 2));
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.mobile ? 1.5 : 1.75));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -226,12 +268,19 @@ export class BodyStudio {
 
     this.camera.position.set(0, 0.5, 46);
     this.controls = new OrbitControls(this.camera, this.canvas);
-    this.controls.enableDamping = false;
+    // smooth turntable: eases out, never flips upside down
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.14;
+    this.controls.rotateSpeed = this.mobile ? 0.75 : 0.6;
+    this.controls.zoomSpeed = 0.9;
+    this.controls.minPolarAngle = 0.25;
+    this.controls.maxPolarAngle = Math.PI - 0.25;
     this.controls.zoomToCursor = true;
     this.controls.minDistance = 3;
     this.controls.maxDistance = 70;
     this.controls.target.set(0, 0, 0);
-    this.controls.addEventListener("change", () => { this.dirty = true; this.emitScale(); });
+    this.controls.addEventListener("change", () => { this.dirty = true; });
+    this.controls.addEventListener("end", () => this.emitScale());
     this.setNavigate(true);
 
     this.stroke = document.createElement("canvas");
@@ -286,6 +335,7 @@ export class BodyStudio {
       this.regions = kept.regions; this.undo = kept.undo; this.redo = kept.redo;
       for (const r of this.regions) this.scene.add(r.mesh);
       this.setSkin("#" + this.material.tone.getHexString(), this.clay);
+      this.syncHair();
       if (this.focus) this.focusRegion(this.focus); else this.frameAll(false);
       this.dirty = true;
       this.opts.onChange?.();
@@ -306,23 +356,31 @@ export class BodyStudio {
       (geo as THREE.BufferGeometry & { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
       (geo as unknown as { computeBoundsTree: () => void }).computeBoundsTree();
       const uniforms = { uInk: { value: null as THREE.Texture | null }, uSketch: { value: null as THREE.Texture | null }, uInkOn: { value: 1 }, uSketchOn: { value: 1 }, uExport: { value: 0 } };
-      const mat = this.makeSkin(uniforms);
+      const mat = this.makeSkin(uniforms, r.name);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.raycast = acceleratedRaycast;
       mesh.name = r.name;
       this.scene.add(mesh);
-      const scale = this.mobile ? 0.7 : 1;
+      const scale = 1;
       // keep every paint texture inside what this GPU can hold (phones are often capped at 4096)
       const cap = Math.min(this.renderer.capabilities.maxTextureSize || 4096, this.mobile ? 2048 : 4096);
       const fit = Math.min(1, cap / Math.max(r.tex[0] * scale, r.tex[1] * scale));
       const tex: [number, number] = [Math.max(256, Math.round(r.tex[0] * scale * fit)), Math.max(256, Math.round(r.tex[1] * scale * fit))];
       this.regions.push({ name: r.name, wrap: !!r.wrap, mesh, geo, tex, box: new THREE.Box3(new THREE.Vector3(...r.bbox[0]), new THREE.Vector3(...r.bbox[1])), layers: {}, uniforms });
+      if (r.name === "head" && !this.hair.has(gender)) this.hair.set(gender, buildEyes(gender));
     }
     this.setSkin("#" + this.material.tone.getHexString(), this.clay);
+    this.syncHair();
     if (this.focus) this.focusRegion(this.focus); else this.frameAll(false);
     this.dirty = true;
     this.opts.onChange?.();
   }
+
+  private syncHair() {
+    for (const [g, h] of this.hair) { if (g === this.gender && this.hairOn && !this.clay) this.scene.add(h); else this.scene.remove(h); }
+    this.dirty = true;
+  }
+  setHair(on: boolean) { this.hairOn = on; this.syncHair(); }
 
   private clearAll() {
     for (const k of this.stash.values()) {
@@ -340,16 +398,25 @@ export class BodyStudio {
 
   private blank: THREE.DataTexture = (() => { const t = new THREE.DataTexture(new Uint8Array(4), 1, 1); t.needsUpdate = true; return t; })();
 
-  private makeSkin(uniforms: Region["uniforms"]) {
+  realU = { value: 1 };
+  private hair = new Map<Gender, THREE.Object3D>();
+  hairOn = true;
+  private makeSkin(uniforms: Region["uniforms"], name?: RegionName) {
+    const ch = skinChunks(name === "head" ? FACE[this.gender] : null);
     const m = new THREE.MeshPhysicalMaterial({ color: this.material.tone, roughness: this.material.roughness, sheen: 0.25, sheenRoughness: 0.7, sheenColor: new THREE.Color("#ffe7dc"), clearcoat: 0.04 });
     m.defines = { ...(m.defines ?? {}), USE_UV: "" };
+    const key = name === "head" ? `lx-head-${this.gender}` : "lx-body";
+    m.customProgramCacheKey = () => key;
     m.onBeforeCompile = (sh) => {
       uniforms.uInk.value ??= this.blank;
       uniforms.uSketch.value ??= this.blank;
-      Object.assign(sh.uniforms, uniforms);
+      Object.assign(sh.uniforms, uniforms, { uReal: this.realU });
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\n" + ch.vertexPars)
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\n" + ch.vertexMain);
       sh.fragmentShader = sh.fragmentShader
-        .replace("#include <common>", "#include <common>\nuniform sampler2D uInk; uniform sampler2D uSketch; uniform float uInkOn; uniform float uSketchOn; uniform float uExport;")
-        .replace("#include <map_fragment>", "#include <map_fragment>\n" + SKIN_FRAG);
+        .replace("#include <common>", "#include <common>\nuniform sampler2D uInk; uniform sampler2D uSketch; uniform float uInkOn; uniform float uSketchOn; uniform float uExport;\n" + ch.fragPars)
+        .replace("#include <map_fragment>", "#include <map_fragment>\n" + ch.fragColor + SKIN_FRAG);
     };
     return m;
   }
@@ -358,11 +425,15 @@ export class BodyStudio {
   setSkin(hex: string, clay = false) {
     this.material.tone.set(hex);
     this.clay = clay;
+    this.realU.value = clay ? 0 : 1;
+    this.syncHair();
     for (const r of this.regions) {
       const m = r.mesh.material as THREE.MeshPhysicalMaterial;
       m.color.set(hex);
-      m.roughness = clay ? 0.78 : 0.55;
-      m.sheen = clay ? 0.1 : 0.35;
+      m.roughness = clay ? 0.78 : 0.5;
+      m.sheen = clay ? 0.1 : 0.55;
+      m.sheenColor.set(clay ? "#ffe7dc" : "#ff9c84");
+      m.sheenRoughness = clay ? 0.7 : 0.45;
     }
     this.dirty = true;
   }
@@ -389,7 +460,7 @@ export class BodyStudio {
   /** Lock: the camera stays exactly where it is (no rotate, pan or zoom) while you work. */
   setLocked(lock: boolean) { this.controls.enabled = !lock; }
   setNavigate(nav: boolean) {
-    this.controls.mouseButtons = { LEFT: nav ? THREE.MOUSE.ROTATE : (null as unknown as THREE.MOUSE), MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+    this.controls.mouseButtons = { LEFT: nav ? THREE.MOUSE.ROTATE : (null as unknown as THREE.MOUSE), MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
     this.controls.touches = { ONE: nav ? THREE.TOUCH.ROTATE : (null as unknown as THREE.TOUCH), TWO: THREE.TOUCH.DOLLY_PAN };
     this.controls.enablePan = true;
   }
@@ -564,6 +635,129 @@ export class BodyStudio {
     this.dirty = true;
   }
 
+
+  /* ---------------- wrap decal ---------------- */
+  private axisCache = new Map<Region, THREE.Vector3>();
+  private regionAxis(r: Region) {
+    let ax = this.axisCache.get(r);
+    if (ax) return ax;
+    if (["front", "back", "neck", "head"].includes(r.name)) ax = new THREE.Vector3(0, 1, 0);
+    else {
+      // principal axis of the body part (PCA of its vertices)
+      const pos = r.geo.getAttribute("position") as THREE.BufferAttribute;
+      const m = new THREE.Vector3(); const n = pos.count;
+      for (let i = 0; i < n; i++) m.add(new THREE.Vector3().fromBufferAttribute(pos, i));
+      m.divideScalar(n);
+      const C = [0, 0, 0, 0, 0, 0]; const v = new THREE.Vector3();
+      for (let i = 0; i < n; i++) { v.fromBufferAttribute(pos, i).sub(m); C[0] += v.x * v.x; C[1] += v.x * v.y; C[2] += v.x * v.z; C[3] += v.y * v.y; C[4] += v.y * v.z; C[5] += v.z * v.z; }
+      ax = new THREE.Vector3(1, 1, 1).normalize();
+      for (let it = 0; it < 40; it++) {
+        const x = C[0] * ax.x + C[1] * ax.y + C[2] * ax.z, y = C[1] * ax.x + C[3] * ax.y + C[4] * ax.z, z = C[2] * ax.x + C[4] * ax.y + C[5] * ax.z;
+        ax.set(x, y, z).normalize();
+      }
+    }
+    this.axisCache.set(r, ax);
+    return ax;
+  }
+
+  /** Fits the cross-section circle of a body part around point P (in the plane across axis U). */
+  private crossSection(r: Region, P: THREE.Vector3, U: THREE.Vector3, slab: number) {
+    const pos = r.geo.getAttribute("position") as THREE.BufferAttribute;
+    const e1 = new THREE.Vector3().crossVectors(U, Math.abs(U.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
+    const e2 = new THREE.Vector3().crossVectors(U, e1);
+    let pts: [number, number][] = [];
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).sub(P);
+      if (Math.abs(v.dot(U)) > slab) continue;
+      pts.push([v.dot(e1), v.dot(e2)]);
+    }
+    const fit = (q: [number, number][]) => {
+      // Kåsa least-squares circle: x² + y² + Dx + Ey + F = 0
+      let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sz = 0, sxz = 0, syz = 0; const n = q.length;
+      for (const [x, y] of q) { const z = x * x + y * y; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; sz += z; sxz += x * z; syz += y * z; }
+      const M = new THREE.Matrix3().set(sxx, sxy, sx, sxy, syy, sy, sx, sy, n);
+      const b = new THREE.Vector3(-sxz, -syz, -sz).applyMatrix3(M.invert());
+      const cx = -b.x / 2, cy = -b.y / 2;
+      return { cx, cy, r: Math.sqrt(Math.max(1e-6, cx * cx + cy * cy - b.z)) };
+    };
+    if (pts.length < 8) return null;
+    let c = fit(pts);
+    for (let k = 0; k < 2; k++) {   // drop points that belong to something else (the other leg, an arm)
+      const keep = pts.filter(([x, y]) => Math.abs(Math.hypot(x - c.cx, y - c.cy) - c.r) < c.r * 0.35);
+      if (keep.length < 8) break;
+      pts = keep; c = fit(pts);
+    }
+    return P.clone().addScaledVector(e1, c.cx).addScaledVector(e2, c.cy);
+  }
+
+  /**
+   * Lays a design onto the body around the point under (clientX, clientY), wrapping with the body part.
+   * design: premultiplied-ready canvas (transparent background). Returns false when nothing was hit.
+   */
+  applyDesign(o: { clientX: number; clientY: number; wCm: number; ratio: number; rot: number; design: HTMLCanvasElement }) {
+    const hit = this.pick(o.clientX, o.clientY); if (!hit) return false;
+    const r = hit.region, P = hit.point.clone();
+    const wW = o.wCm / this.cmPerUnit, hW = (o.wCm * o.ratio) / this.cmPerUnit;
+    const U = this.regionAxis(r).clone();
+    this.camera.updateMatrixWorld();
+    const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    if (U.dot(camUp) < 0) U.negate();
+    const A = this.crossSection(r, P, U, Math.max(0.6 / this.cmPerUnit, Math.min(hW * 0.15, 3 / this.cmPerUnit)));
+    let V: THREE.Vector3, R: number, Ax: THREE.Vector3;
+    if (A) {
+      Ax = A; V = P.clone().sub(A); V.addScaledVector(U, -V.dot(U)); R = V.length(); V.normalize();
+    } else { // flat fallback: a huge cylinder is a plane
+      V = this.camera.position.clone().sub(P).normalize(); V.addScaledVector(U, -V.dot(U)).normalize(); R = 1000; Ax = P.clone().addScaledVector(V, -R);
+    }
+    if (R > 1000) R = 1000;
+    const W = new THREE.Vector3().crossVectors(U, V).normalize();
+    let flip = 1; if (W.dot(camRight) < 0) { W.negate(); flip = -1; }
+    void flip;
+    // the design texture
+    const tex = new THREE.CanvasTexture(o.design);
+    tex.colorSpace = THREE.NoColorSpace; tex.premultiplyAlpha = true; tex.anisotropy = 8;
+    tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+    const rot = (o.rot * Math.PI) / 180;
+    const mat = this.decalMat ??= new THREE.ShaderMaterial({
+      vertexShader: DECAL_VERT, fragmentShader: DECAL_FRAG,
+      uniforms: { uA: { value: new THREE.Vector3() }, uU: { value: new THREE.Vector3() }, uV: { value: new THREE.Vector3() }, uW: { value: new THREE.Vector3() }, uShift: { value: 0 }, uBase: { value: null }, uDesign: { value: null }, uR: { value: 1 }, uT0: { value: 0 }, uSize: { value: new THREE.Vector2() }, uRot: { value: new THREE.Vector2() }, uSpan: { value: Math.PI } },
+      side: THREE.DoubleSide, depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+    });
+    const u = mat.uniforms;
+    u.uA.value.copy(Ax); u.uU.value.copy(U); u.uV.value.copy(V); u.uW.value.copy(W);
+    u.uDesign.value = tex; u.uR.value = R; u.uT0.value = P.clone().sub(Ax).dot(U);
+    u.uSize.value.set(wW, hW);
+    // screen rotation is clockwise; in the (around, along) frame that is a negative turn
+    u.uRot.value.set(Math.cos(-rot), Math.sin(-rot));
+    u.uSpan.value = Math.min(Math.PI * 0.999, (Math.hypot(wW, hW) / 2) / Math.max(R, 1e-3) + 0.05);
+
+    // every body part the design can reach
+    const reach = Math.hypot(wW, hW) * 0.55;
+    const sphere = new THREE.Sphere(P, reach);
+    const regions = this.regions.filter((x) => x === r || x.box.intersectsSphere(sphere));
+    this.begin("ink", "liner", 1);
+    for (const x of regions) this.touch(x);
+    const a = this.active!;
+    for (const [x, base] of a.touched) {
+      u.uBase.value = base.texture;
+      const m = new THREE.Mesh(x.geo, mat); m.frustumCulled = false;
+      this.projScene.add(m);
+      this.renderer.setRenderTarget(x.layers.ink!);
+      this.renderer.autoClear = false;
+      for (const sh of x.wrap ? [0, -1] : [0]) { u.uShift.value = sh; this.renderer.render(this.projScene, this.quadCam); }
+      this.renderer.autoClear = true; u.uShift.value = 0;
+      this.projScene.remove(m);
+    }
+    this.renderer.setRenderTarget(null);
+    tex.dispose();
+    this.end();
+    this.dirty = true;
+    return true;
+  }
+  private decalMat: THREE.ShaderMaterial | null = null;
+
   /** Ends the stroke: closes UV seams and records undo. */
   end() {
     const a = this.active; if (!a) return;
@@ -678,6 +872,9 @@ export class BodyStudio {
     this.scene.environment = null; this.scene.background = new THREE.Color(1, 1, 1); this.renderer.toneMapping = THREE.NoToneMapping;
     const lights = this.scene.children.filter((c) => (c as THREE.Light).isLight);
     lights.forEach((l) => (l.visible = false));
+    const hairShown = [...this.hair.values()].filter((h) => h.parent);
+    hairShown.forEach((h) => (h.visible = false));
+    const realWas = this.realU.value; this.realU.value = 0;
     const amb = new THREE.AmbientLight(0xffffff, Math.PI); this.scene.add(amb);
     const mats = this.regions.map((r) => r.mesh.material as THREE.MeshPhysicalMaterial);
     const saved = mats.map((m) => [m.color.clone(), m.sheen, m.clearcoat] as const);
@@ -689,6 +886,7 @@ export class BodyStudio {
     this.renderer.setRenderTarget(null);
     mats.forEach((m, i) => { m.color.copy(saved[i][0]); m.sheen = saved[i][1]; m.clearcoat = saved[i][2]; m.roughness = this.material.roughness; });
     this.scene.remove(amb); lights.forEach((l) => (l.visible = true));
+    hairShown.forEach((h) => (h.visible = true)); this.realU.value = realWas;
     this.scene.environment = env; this.scene.background = bg; this.renderer.toneMapping = tm;
     for (const r of this.regions) r.uniforms.uExport.value = 0;
     rt.dispose();
@@ -723,7 +921,7 @@ export class BodyStudio {
       const t = Math.min(1, (performance.now() - this.fly.t0) / 650), e = 1 - Math.pow(1 - t, 3);
       this.camera.position.lerpVectors(this.fly.from, this.fly.to, e);
       this.controls.target.lerpVectors(this.fly.tFrom, this.fly.tTo, e);
-      if (t >= 1) this.fly = null;
+      if (t >= 1) { this.fly = null; this.emitScale(); }
       this.dirty = true;
     }
     if (!this.fly) this.controls.update();

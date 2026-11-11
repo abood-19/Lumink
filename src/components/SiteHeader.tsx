@@ -41,8 +41,8 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
     <>
       {path !== "/" && <Waves />}
       <header className={`sticky top-0 z-30 transition-colors duration-300 ${onHero ? "border-b border-transparent bg-transparent" : "border-b border-[rgba(255,255,255,0.08)] bg-night"}`}>
-        <div className="mx-auto flex h-[72px] max-w-[1240px] items-center justify-between gap-3 px-4 sm:gap-6 sm:px-6">
-          <Logo />
+        <div className="mx-auto flex h-[72px] max-w-[1240px] items-center justify-between gap-2 px-3 sm:gap-6 sm:px-6">
+          <span className="min-w-0 shrink [&_svg]:max-w-full max-[400px]:[&_svg]:h-[22px] max-[400px]:[&_svg]:w-auto"><Logo /></span>
           <nav aria-label="Main" className="hidden items-center gap-6 lg:flex">
             {nav.map((n) => (
               <Link
@@ -55,9 +55,9 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
               </Link>
             ))}
           </nav>
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-none items-center gap-1.5 sm:gap-2.5">
             <LangSwitcher />
-            <Link href={signedIn ? "/studio" : "/login"} className="lx-btn lx-btn-sm lx-btn-primary">
+            <Link href={signedIn ? "/studio" : "/login"} className="lx-btn lx-btn-sm lx-btn-primary whitespace-nowrap max-[400px]:!px-3 max-[400px]:text-[13px]">
               {signedIn ? t.app_open : t.signin}
             </Link>
             <button

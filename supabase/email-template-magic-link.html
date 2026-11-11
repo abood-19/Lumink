@@ -1,0 +1,5 @@
+<!-- Supabase → Authentication → Email Templates → "Magic Link". Paste this so the email has both a link and a code. -->
+<h2>LUMINK</h2>
+<p>Ваш код входа / Your sign-in code / رمز الدخول:</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:6px">{{ .Token }}</p>
+<p><a href="{{ .ConfirmationURL }}">Войти / Sign in / دخول</a></p>

@@ -225,6 +225,52 @@ export function mountInkPen(host: HTMLElement, opts: { horizontal?: boolean } = 
   el.addEventListener("pointerup", up);
   el.addEventListener("pointercancel", up);
 
+  // ---- the pen answers the hand: phone tilt and shake, or the cursor on a computer -----------------
+  const tilt = { x: 0, z: 0 }, tiltGoal = { x: 0, z: 0 };
+  let base: { b: number; g: number } | null = null;
+  const onOrient = (e: DeviceOrientationEvent) => {
+    if (e.beta == null || e.gamma == null) return;
+    base ??= { b: e.beta, g: e.gamma };
+    base.b += (e.beta - base.b) * 0.004; base.g += (e.gamma - base.g) * 0.004;   // slowly re-centres on how it is held
+    tiltGoal.x = THREE.MathUtils.clamp((e.beta - base.b) * 0.014, -0.7, 0.7);
+    tiltGoal.z = THREE.MathUtils.clamp(-(e.gamma - base.g) * 0.018, -0.8, 0.8);
+  };
+  const onMotion = (e: DeviceMotionEvent) => {
+    const a = e.acceleration; if (!a || a.x == null || a.y == null) return;
+    const m = Math.hypot(a.x, a.y, a.z ?? 0);
+    if (m < 0.6) return;
+    const k = m > 9 ? 0.05 : 0.022;                // a real shake throws the ink around
+    vel.z += -a.x * k; vel.x += a.y * k; vel.y += (a.z ?? 0) * k * 0.6;
+  };
+  const fine = matchMedia("(pointer: fine)").matches;
+  let lastMouse: { x: number; y: number; t: number } | null = null;
+  const onMouse = (e: MouseEvent) => {
+    if (drag) return;
+    const r = host.getBoundingClientRect();
+    const nx = THREE.MathUtils.clamp((e.clientX - (r.left + r.width / 2)) / (window.innerWidth / 2), -1, 1);
+    const ny = THREE.MathUtils.clamp((e.clientY - (r.top + r.height / 2)) / (window.innerHeight / 2), -1, 1);
+    tiltGoal.z = -nx * 0.32; tiltGoal.x = ny * 0.22;
+    const now = performance.now();
+    if (lastMouse) {   // a quick flick of the mouse sloshes the ink a little
+      const dt = Math.max(16, now - lastMouse.t) / 1000;
+      const vx = (e.clientX - lastMouse.x) / dt, vy = (e.clientY - lastMouse.y) / dt;
+      vel.z += -vx * 0.00004; vel.x += vy * 0.00003;
+    }
+    lastMouse = { x: e.clientX, y: e.clientY, t: now };
+  };
+  const ask = () => {   // iPhone asks once, on the first touch
+    const DM = (window as unknown as { DeviceMotionEvent?: { requestPermission?: () => Promise<string> } }).DeviceMotionEvent;
+    const DO = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
+    DM?.requestPermission?.().catch(() => undefined);
+    DO?.requestPermission?.().catch(() => undefined);
+  };
+  if (!reduce) {
+    window.addEventListener("deviceorientation", onOrient);
+    window.addEventListener("devicemotion", onMotion);
+    window.addEventListener("pointerdown", ask, { once: true });
+    if (fine) window.addEventListener("mousemove", onMouse, { passive: true });
+  }
+
   // ---- loop -----------------------------------------------------------------------------------
   let visible = true;
   const io = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
@@ -241,10 +287,12 @@ export function mountInkPen(host: HTMLElement, opts: { horizontal?: boolean } = 
     last = now;
     time += dt;
 
+    tilt.x += (tiltGoal.x - tilt.x) * Math.min(1, dt * 6);
+    tilt.z += (tiltGoal.z - tilt.z) * Math.min(1, dt * 6);
     const k = drag ? 4 : 13;
     const damp = drag ? 2.5 : 4;
-    vel.x += (-(rot.x - REST.x) * k - vel.x * damp) * dt;
-    vel.z += (-(rot.z - REST.z) * k - vel.z * damp) * dt;
+    vel.x += (-(rot.x - (REST.x + tilt.x)) * k - vel.x * damp) * dt;
+    vel.z += (-(rot.z - (REST.z + tilt.z)) * k - vel.z * damp) * dt;
     vel.y += -vel.y * 1.4 * dt;
     const pvx = vel.x, pvz = vel.z;
     rot.x += vel.x * dt;
@@ -284,6 +332,10 @@ export function mountInkPen(host: HTMLElement, opts: { horizontal?: boolean } = 
     el.removeEventListener("pointermove", move);
     el.removeEventListener("pointerup", up);
     el.removeEventListener("pointercancel", up);
+    window.removeEventListener("deviceorientation", onOrient);
+    window.removeEventListener("devicemotion", onMotion);
+    window.removeEventListener("pointerdown", ask);
+    window.removeEventListener("mousemove", onMouse);
     scene.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.geometry) m.geometry.dispose();

@@ -18,7 +18,8 @@
 
 html { background: var(--color-night); color: var(--color-ivory); }
 html[dir="rtl"] body { font-family: "IBM Plex Sans Arabic", "Onest", sans-serif; }
-body { margin: 0; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+body { margin: 0; min-height: 100vh; -webkit-font-smoothing: antialiased; overflow-x: clip; }
+html { overflow-x: clip; }
 *:focus-visible { outline: 2px solid var(--color-lilac); outline-offset: 2px; }
 ::selection { background: rgba(196, 241, 53, .35); }
 
@@ -30,14 +31,15 @@ textarea.lx-input { padding: 12px 14px; min-height: 110px; }
 .lx-input::placeholder { color: #74747c; }
 input[type="range"] { accent-color: var(--color-lilac); width: 100%; }
 
-.lx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 24px; border-radius: 999px; font-weight: 600; font-size: 15px; letter-spacing: .01em; cursor: pointer; transition: transform .2s, background .2s, border-color .2s, opacity .2s; }
-.lx-btn:hover { transform: translateY(-1px); }
+.lx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 22px; border-radius: 12px; font-weight: 600; font-size: 15px; letter-spacing: 0; cursor: pointer; transition: background .15s, border-color .15s, opacity .15s, transform .1s; }
+.lx-btn:active { transform: scale(.98); }
 .lx-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-.lx-btn-primary { background: var(--color-lilac); color: #0a0b09; border: 0; box-shadow: 0 10px 30px -12px rgba(196,241,53,.6); }
+.lx-btn-primary { background: var(--color-lilac); color: #0a0b09; border: 0; }
 .lx-btn-primary:hover { background: #d4ff4a; }
 .lx-btn-dark { background: #0a0b09; color: #f2f5ea; border: 0; }
-.lx-btn-ghost { background: rgba(11,11,13,.35); color: var(--color-ivory); border: 1px solid rgba(238, 240, 255, .28); }
-.lx-btn-sm { min-height: 40px; padding: 0 16px; font-size: 14px; }
+.lx-btn-ghost { background: rgba(255,255,255,.03); color: var(--color-ivory); border: 1px solid rgba(255,255,255,.16); }
+.lx-btn-ghost:hover { border-color: rgba(255,255,255,.34); }
+.lx-btn-sm { min-height: 40px; padding: 0 16px; font-size: 14px; border-radius: 10px; }
 [dir="rtl"] .lx-arrow { transform: scaleX(-1); }
 
 /* motion */
@@ -156,3 +158,16 @@ a.lx-card-light:hover { transform: translateY(-4px); box-shadow: 0 34px 60px -26
 }
 @keyframes lx-bead { 0% { transform: scale(.4); } 38% { transform: scale(1.1); } 42%, 100% { transform: scale(.4); } }
 @media (prefers-reduced-motion: reduce) { .lx-drip, .lx-drip-bead { animation: none; } .lx-drip { opacity: 0; } }
+
+/* footer flash sheet: designs trace themselves like a needle, shading fills after the line */
+.lx-flashdraw svg * { stroke-dasharray: 1; stroke-dashoffset: 1; fill-opacity: 0; }
+.lx-flashdraw[data-state="on"] svg * { animation: lx-trace 1.5s cubic-bezier(.55,.1,.35,1) forwards; animation-delay: var(--d); }
+.lx-flashdraw[data-state="done"] svg * { stroke-dashoffset: 0; fill-opacity: 1; }
+.lx-flashdraw[data-state="fade"] { opacity: 0; transition: opacity .6s ease; }
+.lx-flashdraw[data-state="fade"] svg * { stroke-dashoffset: 0; fill-opacity: 1; }
+.lx-flashdraw > div { animation: inherit; }
+.lx-flashdraw[data-state="on"] > div svg { animation: lx-buzz .05s steps(2) infinite; animation-delay: var(--d); animation-duration: .05s; }
+@keyframes lx-trace { 0% { stroke-dashoffset: 1; fill-opacity: 0; } 72% { stroke-dashoffset: 0; fill-opacity: 0; } 100% { stroke-dashoffset: 0; fill-opacity: 1; } }
+@keyframes lx-buzz { 0% { transform: translate(0, 0); } 100% { transform: translate(.4px, -.3px); } }
+.lx-machine-buzz { animation: lx-buzz .045s steps(2) infinite; transform-origin: 60% 80%; }
+@media (prefers-reduced-motion: reduce) { .lx-machine-buzz { animation: none; } }

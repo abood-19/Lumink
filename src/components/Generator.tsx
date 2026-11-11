@@ -31,6 +31,8 @@ export function Generator() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<string[]>([]);
+  const [mode, setMode] = useState<"line" | "shaded" | "color">("line");
+  const [left, setLeft] = useState<string | number | null>(null);
 
   const run = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,15 +40,15 @@ export function Generator() {
     setError(null);
     let res: Response;
     try {
-      res = await fetch("/api/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: prompt.trim(), style }) });
+      res = await fetch("/api/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: prompt.trim(), style, mode }) });
     } catch {
       setBusy(false);
       return setError(t.gen_error);
     }
     const json = await res.json().catch(() => ({}));
     setBusy(false);
-    if (res.ok && json.image) return setResults((r) => [json.image, ...r].slice(0, 12));
-    const map: Record<string, string> = { refused: t.gen_refused, not_configured: t.gen_not_configured, no_tokens: t.no_tokens, login: t.need_login };
+    if (res.ok && json.image) { if (json.remaining != null) setLeft(json.remaining); return setResults((r) => [json.image, ...r].slice(0, 12)); }
+    const map: Record<string, string> = { refused: t.gen_refused, not_configured: t.gen_not_configured, no_tokens: t.no_tokens, login: t.need_login, daily_cap: t.gen_daily_cap };
     setError(map[json.error as string] ?? t.gen_error);
   };
 
@@ -62,19 +64,28 @@ export function Generator() {
           <fieldset className="m-0 w-full min-w-0 border-0 p-0">
             <legend className="mb-1 text-[13px] text-ash">{t.gen_style}</legend>
             <p className="mb-3 mt-0 text-[12px] text-ash">{t.gen_style_hint}</p>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
               {STYLES.map((st) => (
-                <button key={st.id} type="button" aria-pressed={style === st.name} onClick={() => setStyle(st.name)} className={`flex items-start gap-3 rounded-xl border p-3 text-start ${style === st.name ? "border-lilac bg-[rgba(196,241,53,.14)]" : "border-[rgba(200,200,210,0.12)] hover:border-[rgba(200,200,210,0.3)]"}`}>
+                <button key={st.id} type="button" aria-pressed={style === st.name} onClick={() => setStyle(st.name)} className={`flex items-center gap-2.5 rounded-xl border p-2.5 text-start sm:items-start sm:gap-3 sm:p-3 ${style === st.name ? "border-lilac bg-[rgba(196,241,53,.14)]" : "border-[rgba(200,200,210,0.12)] hover:border-[rgba(200,200,210,0.3)]"}`}>
                   <span className="flex h-11 w-11 flex-none items-center justify-center rounded-lg bg-[#f3f0ea]"><FlashArt name={st.art} size={34} /></span>
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold text-ivory">{st.name}</span>
-                    <span className="block text-[12px] leading-snug text-mist">{t[`gst_${st.id}` as keyof typeof t] as string}</span>
+                    <span className="hidden text-[12px] leading-snug text-mist sm:block">{t[`gst_${st.id}` as keyof typeof t] as string}</span>
                   </span>
                 </button>
               ))}
             </div>
           </fieldset>
-          <button type="submit" disabled={busy || !prompt.trim()} className="lx-btn lx-btn-primary">{busy ? t.gen_working : t.gen_btn}</button>
+          <fieldset className="m-0 w-full border-0 p-0">
+            <legend className="mb-2 text-[13px] text-ash">{t.gen_mode}</legend>
+            <div className="grid grid-cols-3 border border-[rgba(255,255,255,.12)]">
+              {(["line", "shaded", "color"] as const).map((k) => (
+                <button key={k} type="button" aria-pressed={mode === k} onClick={() => setMode(k)} className={`min-h-11 px-2 text-[13px] ${mode === k ? "bg-ivory font-semibold text-night" : "text-mist"}`}>{t[`gen_mode_${k}` as keyof typeof t] as string}</button>
+              ))}
+            </div>
+          </fieldset>
+          <button type="submit" disabled={busy || !prompt.trim()} className="lx-btn lx-btn-primary w-full sm:w-auto">{busy ? t.gen_working : t.gen_btn}</button>
+          {left != null && <span className="text-[13px] text-mist">{left === "unlimited" ? t.gen_unlimited : `${t.gen_left}: ${left}`}</span>}
         </div>
         {error && <p role="alert" className="m-0 rounded-xl bg-[rgba(240,149,149,.1)] px-4 py-3 text-sm text-[#ffc9cc]">{error}</p>}
       </form>

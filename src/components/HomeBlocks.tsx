@@ -8,12 +8,12 @@ export function CrossBands({ words }: { words: string[] }) {
   const row = [...icons, ...icons, ...icons];
   return (
     <div aria-hidden="true" className="relative z-10 -mt-14 mb-0 h-[170px] overflow-hidden" dir="ltr">
-      <div className="absolute left-[-5%] top-[34px] w-[110%] rotate-[2.5deg] bg-[#0a0b09] py-3.5 border-y border-[rgba(196,241,53,.25)] shadow-[0_20px_40px_rgba(0,0,0,.5)]">
+      <div className="absolute left-[-5%] top-[34px] z-20 w-[110%] rotate-[2.5deg] bg-[#0a0b09] py-3.5 border-y border-[rgba(196,241,53,.25)] shadow-[0_20px_40px_rgba(0,0,0,.5)]">
         <div className="lx-tick-rev flex w-max items-center gap-10 font-display text-[22px] font-semibold uppercase tracking-[.12em] text-lilac">
           {[...words, ...words, ...words, ...words].map((w, i) => <span key={i} className="flex items-center gap-10">{w}<span className="text-ivory">✦</span></span>)}
         </div>
       </div>
-      <div className="absolute left-[-5%] top-[52px] w-[110%] rotate-[-2.5deg] bg-lilac py-4 shadow-[0_24px_60px_rgba(196,241,53,.25)]">
+      <div className="absolute left-[-5%] top-[52px] z-10 w-[110%] rotate-[-2.5deg] bg-lilac py-4 shadow-[0_24px_60px_rgba(196,241,53,.25)]">
         <div className="lx-tick flex w-max items-center gap-9">
           {row.map((n, i) => (
             <span key={i} className="flex items-center gap-9">

@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 type Event = {
   meta: { event_name: string; custom_data?: { user_id?: string } };
-  data: { id: string; attributes: { status: string; variant_id: number; ends_at: string | null; renews_at: string | null; customer_id: number; urls?: { customer_portal?: string } } };
+  data: { id: string; type?: string; attributes: { status: string; variant_id: number; ends_at: string | null; renews_at: string | null; customer_id: number; subscription_id?: number; urls?: { customer_portal?: string } } };
 };
 
 /**
@@ -25,6 +25,18 @@ export async function POST(req: Request) {
   const name = ev.meta.event_name;
   if (!name.startsWith("subscription_")) return NextResponse.json({ ok: true });
   const a = ev.data.attributes;
+
+  // Payment events carry an invoice, not the subscription: they only refill the allowance, never change the plan.
+  if (name.startsWith("subscription_payment_")) {
+    const subId = String(a.subscription_id ?? "");
+    const { data: sub } = await admin.from("subscriptions").select("user_id, plan").eq("provider_id", subId).maybeSingle();
+    const uid = sub?.user_id ?? ev.meta.custom_data?.user_id;
+    if (uid && (name === "subscription_payment_success" || name === "subscription_payment_recovered") && sub?.plan && sub.plan !== "free") {
+      await admin.from("profiles").update({ tokens: PLANS[sub.plan as keyof typeof PLANS].tokens, tokens_reset_at: new Date().toISOString(), gen_count: 0 }).eq("id", uid).eq("lifetime", false);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   let userId = ev.meta.custom_data?.user_id;
   if (!userId) {
     const { data } = await admin.from("subscriptions").select("user_id").eq("provider_id", ev.data.id).maybeSingle();
@@ -39,8 +51,7 @@ export async function POST(req: Request) {
   }, { onConflict: "provider_id" });
 
   const patch: Record<string, unknown> = { plan };
-  // Refill tokens when a period is paid (new subscription or renewal).
-  if (name === "subscription_created" || name === "subscription_payment_success" || name === "subscription_resumed") patch.tokens = PLANS[plan].tokens;
+  if (name === "subscription_created" || name === "subscription_resumed") { patch.tokens = PLANS[plan].tokens; patch.tokens_reset_at = new Date().toISOString(); }
   await admin.from("profiles").update(patch).eq("id", userId).eq("lifetime", false);
   return NextResponse.json({ ok: true });
 }

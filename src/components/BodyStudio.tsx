@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n/client";
 import { downloadDataUrl, fileToDataUrl, loadImage } from "@/lib/store";
 import { ColorPicker } from "./ColorPicker";
+import { INK_COLORS, prepareInk } from "@/lib/inkPrep";
+import { InkSwatches } from "./InkSwatches";
+import { LetteringPanel } from "./LetteringPanel";
 import { HANDOFF_KEY } from "./Simulator2D";
 import type { BodyStudio as Engine, BrushKind, Gender, LayerName, RegionName } from "@/lib/three/bodyPaint";
 
@@ -15,17 +18,17 @@ const SKINS = ["#ecebe7", "#f1cdb4", "#e2b08f", "#c98d66", "#a06a46", "#74472d",
 const INKS = ["#111111", "#3a3a3a", "#8a8a8a", "#a3261c", "#e2572b", "#f2c434", "#2f5a2a", "#1e9c8c", "#1f3a5f", "#5b3fa8", "#d46a9f", "#f4f1ea"];
 const DESIGNS = ["/designs/tribal.png", "/designs/oni.png", "/designs/mandala.png", "/designs/geometry.png", "/designs/lettering.png", "/designs/band.png", "/designs/spine.png", "/designs/mask.png"];
 const TOOL_ICON: Record<Tool, string> = {
-  move: "M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3",
-  liner: "M4 20 18 6l2 2L6 22H4ZM15 9l2 2",
+  move: "M12 2.5v19M2.5 12h19M12 2.5 9.5 5M12 2.5 14.5 5M12 21.5 9.5 19M12 21.5l2.5-2.5M2.5 12 5 9.5M2.5 12 5 14.5M21.5 12 19 9.5M21.5 12 19 14.5",
+  liner: "M14.5 4.5l5 5L8 21H3v-5L14.5 4.5ZM12.5 6.5l5 5",
   sketch: "M3 21l3-1 12-12-2-2L4 18ZM14 6l2 2M3 21h18",
-  shade: "M12 3c4 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2-6 6-11Z",
+  shade: "M12 3.2c3.9 4.6 6 7.9 6 10.6a6 6 0 1 1-12 0c0-2.7 2.1-6 6-10.6ZM9 15a3 3 0 0 0 3 3",
   dots: "M6 6h.01M12 6h.01M18 6h.01M9 12h.01M15 12h.01M6 18h.01M12 18h.01M18 18h.01",
-  eraser: "M8 20h12M5 15l9-9 5 5-9 9H8ZM10 10l5 5",
+  eraser: "M8.5 20H20M4.6 14.6l9.2-9.2a2 2 0 0 1 2.8 0l2.5 2.5a2 2 0 0 1 0 2.8L11 18.8a4 4 0 0 1-5.6 0l-.8-.8a2.4 2.4 0 0 1 0-3.4ZM9 10l5 5",
   tint: "M5 11l7-7 7 7-7 7ZM19 15c0 2 1.5 3 1.5 4.5a1.5 1.5 0 0 1-3 0C17.5 18 19 17 19 15ZM3 21h11",
-  design: "M4 4h16v16H4ZM4 15l5-5 4 4 3-3 4 4",
+  design: "M12 3.5 14.4 9l5.6.4-4.3 3.7 1.4 5.6L12 15.6 6.9 18.7l1.4-5.6L4 9.4 9.6 9Z",
 };
 
-type Place = { x: number; y: number; wCm: number; rot: number; src: string; ratio: number; black: boolean };
+type Place = { x: number; y: number; wCm: number; rot: number; src: string; ratio: number; black: boolean; color: string };
 
 export function BodyStudio() {
   const { t } = useI18n();
@@ -41,7 +44,8 @@ export function BodyStudio() {
   const [sketchColor, setSketchColor] = useState("#e0412b");
   const [eraseLayer, setEraseLayer] = useState<LayerName>("ink");
   const [show, setShow] = useState({ sketch: true, ink: true });
-  const [skin, setSkin] = useState(SKINS[0]);
+  const [skin, setSkin] = useState(SKINS[2]);
+  const [letters, setLetters] = useState(false);
   const [mirror, setMirror] = useState(false);
   const [region, setRegion] = useState<RegionName | null>(null);
   const [, bump] = useState(0);
@@ -73,7 +77,7 @@ export function BodyStudio() {
         if (location.search.includes("lxrender")) (window as unknown as { __lxStudio?: unknown }).__lxStudio = e;
         await e.load();
         if (disposed) return;
-        e.setSkin(SKINS[0], true);
+        e.setSkin(SKINS[2], false);
         setReady(true);
         let handed: string | null = null;
         try { handed = sessionStorage.getItem(HANDOFF_KEY); sessionStorage.removeItem(HANDOFF_KEY); } catch {}
@@ -84,7 +88,7 @@ export function BodyStudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
 
-  useEffect(() => { eng.current?.setNavigate(tool === "move" || tool === "design"); }, [tool, ready]);
+  useEffect(() => { eng.current?.setNavigate(tool === "move" || (tool === "design" && !place)); }, [tool, ready, place]);
   useEffect(() => { eng.current?.setLocked(locked); }, [locked, ready]);
 
   // The page keeps scrolling with the mouse wheel / trackpad until you click into the 3D view;
@@ -175,6 +179,7 @@ export function BodyStudio() {
     }
     ctx.globalAlpha = 1;
     s.smooth = sm; s.last = { x: sm.x, y: sm.y, p };
+    if (!straightening.current) strokePts.current.push({ x, y });
     touchAround(x, y, r);
     schedule();
   };
@@ -194,15 +199,43 @@ export function BodyStudio() {
     e.begin(brushLayer(kind), kind, kind === "eraser" ? 1 : L.opacity / 100, ss, L.color);
     s.radius = Math.max(0.6, ((L.sizeMm / 10) * pxPerCm * e.strokeScale / e.bufferScale) / 2) * (kind === "shade" ? 3 : kind === "dots" ? 2.5 : kind === "tint" ? 4 : 1);
     s.drawing = true; s.last = null; s.smooth = null; s.lastProbe = null;
+    if (!straightening.current) strokePts.current = [];
     dab(x, y, p);
     return true;
+  };
+  // a line drawn nearly straight snaps to a perfectly straight one; anything freehand stays as drawn
+  const strokePts = useRef<{ x: number; y: number }[]>([]);
+  const straightening = useRef(false);
+  const isStraight = (pts: { x: number; y: number }[]) => {
+    if (pts.length < 6) return false;
+    const a = pts[0], b = pts[pts.length - 1], len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 40) return false;
+    let travelled = 0, dev = 0;
+    for (let i = 1; i < pts.length; i++) {
+      travelled += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      dev = Math.max(dev, Math.abs((b.x - a.x) * (a.y - pts[i].y) - (a.x - pts[i].x) * (b.y - a.y)) / len);
+    }
+    return dev < Math.max(4, len * 0.045) && travelled < len * 1.12;
   };
   const endStroke = () => {
     const s = st.current; if (!s.drawing) return;
     s.drawing = false;
     cancelAnimationFrame(s.raf); s.raf = 0;
-    eng.current?.update();
-    eng.current?.end();
+    const e = eng.current; if (!e) return;
+    const pts = strokePts.current, kind = live.current.tool;
+    if ((kind === "liner" || kind === "sketch" || kind === "eraser") && isStraight(pts)) {
+      e.cancel();
+      const a = pts[0], b = pts[pts.length - 1];
+      straightening.current = true;
+      if (startStroke(a.x, a.y, 1)) {
+        const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 3));
+        for (let i = 1; i <= n; i++) { st.current.smooth = null; dab(a.x + ((b.x - a.x) * i) / n, a.y + ((b.y - a.y) * i) / n, 1); }
+        st.current.drawing = false;
+      }
+      straightening.current = false;
+    }
+    e.update();
+    e.end();
   };
 
   const local = (ev: { clientX: number; clientY: number }) => {
@@ -274,10 +307,11 @@ export function BodyStudio() {
 
   /* ---------- design placement ---------- */
   const startPlace = useCallback(async (src: string) => {
+    if (preview.current) { eng.current?.undoStep(); preview.current = false; setProjected(false); }
     const img = await loadImage(src).catch(() => null);
     if (!img || !host.current) return;
     const r = host.current.getBoundingClientRect();
-    setPlace({ x: r.width / 2, y: r.height / 2, wCm: 8, rot: 0, src, ratio: img.height / img.width, black: false });
+    setPlace({ x: r.width / 2, y: r.height / 2, wCm: 8, rot: 0, src, ratio: img.height / img.width, black: false, color: INK_COLORS[1] });
     setTool("design");
   }, []);
 
@@ -290,41 +324,38 @@ export function BodyStudio() {
   }, [place, cssPxPerCm]);
   const pxCm = place ? placeScale() : cssPxPerCm;
 
+  // live preview: the design is projected onto the skin whenever you stop moving it
+  const preview = useRef(false);
+  const dragging = useRef(false);
+  const [projected, setProjected] = useState(false);
+  const clearPreview = () => { if (preview.current) { eng.current?.undoStep(); preview.current = false; setProjected(false); } };
+  const project = async (pl: Place, hq = false) => {
+    const e = eng.current; if (!e) return;
+    clearPreview();
+    await projectPlace(pl, hq);
+    preview.current = true; setProjected(true);
+  };
+  useEffect(() => {
+    if (!place || dragging.current) return;
+    const id = setTimeout(() => { project(place); }, 90);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [place]);
   const applyPlace = async () => {
-    const e = eng.current; if (!e || !place) return;
-    const img = await loadImage(place.src);
-    // render the design into the projection at ~120 px/cm so it stays crisp on the skin and in the stencil
-    e.begin("ink", "liner", 1, Math.min(6, Math.max(1, 120 / (pxCm * e.bufferScale))));
-    const dpr = e.strokeScale;
-    const w = place.wCm * pxCm * dpr, h = w * place.ratio;
-    // design on its own canvas, optionally as solid black ink, light paper knocked out
-    const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h));
-    const g = c.getContext("2d")!;
-    g.drawImage(img, 0, 0, c.width, c.height);
-    const d = g.getImageData(0, 0, c.width, c.height);
-    for (let i = 0; i < d.data.length; i += 4) {
-      const l = 0.2126 * d.data[i] + 0.7152 * d.data[i + 1] + 0.0722 * d.data[i + 2];
-      const a = (d.data[i + 3] / 255) * Math.min(1, Math.max(0, (240 - l) / 140));
-      d.data[i + 3] = Math.round(a * 255);
-      if (place.black) { d.data[i] = 17; d.data[i + 1] = 17; d.data[i + 2] = 17; }
-    }
-    g.putImageData(d, 0, 0);
-    const ctx = e.strokeContext;
-    ctx.save();
-    ctx.translate(place.x * dpr, place.y * dpr);
-    ctx.rotate((place.rot * Math.PI) / 180);
-    ctx.drawImage(c, -w / 2, -h / 2, w, h);
-    ctx.restore();
-    // every region the design covers
+    if (!place) return;
+    await project(place, true);   // final pass at full resolution
+    preview.current = false; setProjected(false);
+    setPlace(null); setTool("move");
+  };
+  const cancelPlace = () => { clearPreview(); setPlace(null); setTool("move"); };
+  const inkCache = useRef<{ key: string; c: HTMLCanvasElement } | null>(null);
+  const projectPlace = async (place: Place, _hq = true) => {
+    void _hq;
+    const e = eng.current; if (!e) return;
+    const key = place.src + "|" + place.color;
+    if (inkCache.current?.key !== key) inkCache.current = { key, c: prepareInk(await loadImage(place.src), place.color) };
     const rect = e.canvas.getBoundingClientRect();
-    const cos = Math.cos((place.rot * Math.PI) / 180), sin = Math.sin((place.rot * Math.PI) / 180);
-    for (let i = 0; i <= 6; i++) for (let j = 0; j <= 6; j++) {
-      const lx = (i / 6 - 0.5) * place.wCm * pxCm, ly = (j / 6 - 0.5) * place.wCm * place.ratio * pxCm;
-      const hit = e.pick(rect.left + place.x + lx * cos - ly * sin, rect.top + place.y + lx * sin + ly * cos);
-      if (hit) { e.touch(hit.region); if (e.mirror) e.touchMirror(hit.region); }
-    }
-    e.update(); e.end();
-    setPlace(null); setTool("liner");
+    e.applyDesign({ clientX: rect.left + place.x, clientY: rect.top + place.y, wCm: place.wCm, ratio: place.ratio, rot: place.rot, design: inkCache.current.c });
   };
 
   const dragPlace = (mode: "move" | "scale") => (ev: React.PointerEvent) => {
@@ -332,6 +363,8 @@ export function BodyStudio() {
     ev.stopPropagation();
     (ev.target as Element).setPointerCapture(ev.pointerId);
     const start = local(ev), p0 = { ...place };
+    dragging.current = true;
+    clearPreview();
     const move = (e2: PointerEvent) => {
       const q = local(e2);
       if (mode === "move") setPlace((p) => p && { ...p, x: p0.x + q.x - start.x, y: p0.y + q.y - start.y });
@@ -341,7 +374,11 @@ export function BodyStudio() {
         setPlace((p) => p && { ...p, wCm: Math.min(60, Math.max(1, +(p0.wCm * (v1 / Math.max(1, v0))).toFixed(1))), rot: Math.round(p0.rot + ((a1 - a0) * 180) / Math.PI) });
       }
     };
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    const up = () => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      dragging.current = false;
+      setPlace((p) => p && { ...p }); // re-project where it was dropped
+    };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
 
@@ -380,23 +417,27 @@ export function BodyStudio() {
   const pickSkin = (c: string) => { setSkin(c); eng.current?.setSkin(c, c === SKINS[0]); };
   const toggleLayer = (l: LayerName) => { const v = !show[l]; setShow({ ...show, [l]: v }); eng.current?.setLayerVisible(l, v); };
 
-  const tools: [Tool, string][] = [["move", t.bs_move], ["liner", t.bs_liner], ["sketch", t.bs_sketch], ["shade", t.bs_shade], ["dots", t.bs_dots], ["tint", t.bs_tint], ["eraser", t.bs_eraser], ["design", t.bs_design]];
+  const tools: [Tool, string][] = [["move", t.tl_move], ["design", t.tl_design], ["liner", t.tl_pen], ["shade", t.tl_shade], ["eraser", t.tl_erase]];
   const regionNames: string[] = t.bs_regions;
   const e = eng.current;
 
   return (
     <div className="flex flex-col gap-3">
       {/* body + regions */}
-      <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
-        <div className="flex flex-none border border-[rgba(255,255,255,.14)]" role="group" aria-label={t.bs_body}>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-none rounded-xl bg-white/5 p-1" role="group" aria-label={t.bs_body}>
           {(["female", "male"] as Gender[]).map((g) => (
-            <button key={g} type="button" aria-pressed={gender === g} disabled={swapping} onClick={() => pickGender(g)} className={`min-h-10 px-3.5 text-[13px] ${gender === g ? "bg-ivory font-semibold text-night" : "text-mist hover:text-ivory"}`}>{g === "female" ? t.bs_body_f : t.bs_body_m}</button>
+            <button key={g} type="button" aria-pressed={gender === g} disabled={swapping} onClick={() => pickGender(g)} className={`min-h-9 rounded-lg px-4 text-[13px] ${gender === g ? "bg-white font-semibold text-[#0a0b09]" : "text-mist hover:text-ivory"}`}>{g === "female" ? t.bs_body_f : t.bs_body_m}</button>
           ))}
         </div>
-        <button type="button" onClick={() => e?.frameAll()} aria-pressed={region === null} className={`min-h-10 flex-none border px-3.5 text-[13px] ${region === null ? "border-lilac bg-lilac font-semibold text-night" : "border-[rgba(255,255,255,.14)] text-mist hover:text-ivory"}`}>{t.bs_full}</button>
-        {REGIONS.map((r, i) => (
-          <button key={r} type="button" onClick={() => e?.focusRegion(r)} aria-pressed={region === r} className={`min-h-10 flex-none border px-3.5 text-[13px] ${region === r ? "border-lilac bg-lilac font-semibold text-night" : "border-[rgba(255,255,255,.14)] text-mist hover:text-ivory"}`}>{regionNames[i]}</button>
-        ))}
+        <label className="relative min-w-0 flex-1 sm:flex-none">
+          <span className="sr-only">{t.bs_body}</span>
+          <select value={region ?? ""} onChange={(ev) => { const v = ev.target.value as RegionName | ""; if (v) e?.focusRegion(v); else e?.frameAll(); }} className="min-h-11 w-full appearance-none rounded-xl border border-white/12 bg-[#121311] pe-10 ps-4 text-[14px] text-ivory sm:w-56">
+            <option value="">{t.bs_full}</option>
+            {REGIONS.map((r, i) => <option key={r} value={r}>{regionNames[i]}</option>)}
+          </select>
+          <svg className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-mist" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+        </label>
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row">
@@ -404,7 +445,7 @@ export function BodyStudio() {
         <div className="relative min-w-0 flex-1 overflow-hidden rounded-[16px] border border-[rgba(255,255,255,.08)]" style={{ background: "radial-gradient(120% 90% at 50% 18%, #2b2c27 0%, #121310 55%, #0a0b09 100%)" }}>
           <div
             ref={host}
-            className={`relative h-[68vh] min-h-[460px] w-full select-none ${tool === "move" || tool === "design" ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair"}`}
+            className={`relative h-[58vh] min-h-[380px] w-full select-none sm:h-[68vh] sm:min-h-[460px] ${tool === "move" || tool === "design" ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair"}`}
             onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
             onContextMenu={(ev) => ev.preventDefault()}
           >
@@ -414,31 +455,43 @@ export function BodyStudio() {
                 style={{ width: place.wCm * pxCm, height: place.wCm * pxCm * place.ratio, transform: `translate(${place.x}px, ${place.y}px) translate(-50%, -50%) rotate(${place.rot}deg)` }}
                 onPointerDown={dragPlace("move")}
               >
-                <img src={place.src} alt="" draggable={false} className="pointer-events-none h-full w-full select-none" style={{ mixBlendMode: "multiply", opacity: 0.92, filter: place.black ? "grayscale(1) contrast(2) brightness(.4)" : undefined }} />
-                <span className="pointer-events-none absolute inset-0 border border-dashed border-lilac" />
-                <span onPointerDown={dragPlace("scale")} className="absolute -bottom-3 -end-3 h-7 w-7 cursor-nwse-resize rounded-full border-2 border-night bg-lilac" aria-label={t.m_size} />
+                {!projected && <img src={place.src} alt="" draggable={false} className="pointer-events-none h-full w-full select-none" style={{ mixBlendMode: "multiply", opacity: 0.92, filter: place.black ? "grayscale(1) contrast(2) brightness(.4)" : undefined }} />}
+                <span className="pointer-events-none absolute inset-0 border border-dashed border-lilac/70" />
+                <span onPointerDown={dragPlace("scale")} className="absolute -bottom-5 -end-5 flex h-10 w-10 cursor-nwse-resize items-center justify-center rounded-full border-2 border-night bg-lilac" aria-label={t.m_size}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 17 17 7M10 7h7v7M7 10v7h7" stroke="#0a0b09" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </span>
               </div>
             )}
           </div>
 
+          {place && (
+            <div className="absolute inset-x-0 bottom-12 flex justify-center gap-2">
+              <button type="button" onClick={cancelPlace} className="min-h-11 rounded-full bg-[rgba(10,11,9,.85)] px-5 text-[14px] text-ivory">✕ {t.bs_cancel}</button>
+              <button type="button" onClick={applyPlace} className="min-h-11 rounded-full bg-lilac px-6 text-[14px] font-semibold text-night shadow-lg">✓ {t.bs_apply}</button>
+            </div>
+          )}
           {/* tool rail */}
-          <div className="absolute start-3 top-3 flex flex-col gap-1 bg-[rgba(10,11,9,.82)] p-1" role="toolbar" aria-label={t.bs_tools}>
-            {tools.map(([k, label]) => (
-              <button key={k} type="button" title={label} aria-label={label} aria-pressed={tool === k} onClick={() => (k === "design" && !place ? startPlace(DESIGNS[0]) : setTool(k))} className={`flex h-11 w-11 items-center justify-center ${tool === k ? "bg-lilac text-night" : "text-mist hover:text-ivory"}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={TOOL_ICON[k]} stroke="currentColor" strokeWidth={k === "dots" ? 3 : 1.6} strokeLinecap="round" strokeLinejoin="round" /></svg>
-              </button>
-            ))}
-          </div>
+          <nav className="absolute start-3 top-3 flex flex-col gap-0.5 rounded-[18px] border border-white/[.07] bg-[rgba(16,17,15,.86)] p-1 shadow-[0_12px_40px_rgba(0,0,0,.45)] backdrop-blur-md" role="toolbar" aria-label={t.bs_tools}>
+            {tools.map(([k, label]) => {
+              const on = tool === k;
+              return (
+                <button key={k} type="button" title={label} aria-label={label} aria-pressed={on} onClick={() => (k === "design" && !place ? startPlace(DESIGNS[0]) : setTool(k))}
+                  className={`group relative flex w-[58px] flex-col items-center gap-1 rounded-[14px] py-2.5 transition-colors ${on ? "bg-white/[.09] text-lilac" : "text-white/55 hover:bg-white/[.04] hover:text-white"}`}>
+                  {on && <span className="absolute start-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-lilac" />}
+                  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={TOOL_ICON[k]} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <span className="text-[10px] font-medium leading-none tracking-wide">{label}</span>
+                </button>
+              );
+            })}
+          </nav>
 
           {/* top-right quick actions */}
-          <div className="absolute end-3 top-3 flex gap-1 bg-[rgba(10,11,9,.82)] p-1">
+          <div className="absolute end-3 top-3 flex gap-1 rounded-2xl bg-[rgba(10,11,9,.82)] p-1.5 backdrop-blur">
             <button type="button" title={t.col_undo} aria-label={t.col_undo} disabled={!e?.canUndo()} onClick={() => e?.undoStep()} className="flex h-10 w-10 items-center justify-center text-ivory disabled:opacity-30"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
             <button type="button" title={t.col_redo} aria-label={t.col_redo} disabled={!e?.canRedo()} onClick={() => e?.redoStep()} className="flex h-10 w-10 items-center justify-center text-ivory disabled:opacity-30"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 14 5-5-5-5M20 9H10a6 6 0 0 0 0 12h3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
-            <button type="button" title={locked ? t.bs_unlock : t.bs_lock} aria-label={locked ? t.bs_unlock : t.bs_lock} aria-pressed={locked} onClick={() => setLocked((v) => !v)} className={`flex h-10 w-10 items-center justify-center ${locked ? "bg-lilac text-night" : "text-ivory"}`}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.6" /><path d={locked ? "M8 11V8a4 4 0 0 1 8 0v3" : "M8 11V8a4 4 0 0 1 7.5-2"} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></button>
-            <button type="button" title={t.bs_mirror} aria-label={t.bs_mirror} aria-pressed={mirror} onClick={() => setMirror((m) => !m)} className={`flex h-10 w-10 items-center justify-center ${mirror ? "bg-lilac text-night" : "text-ivory"}`}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v18M9 7 4 12l5 5ZM15 7l5 5-5 5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg></button>
           </div>
 
-          <p className="pointer-events-none absolute inset-x-0 bottom-0 m-0 bg-[rgba(10,11,9,.7)] px-3 py-2 text-center text-[12px] text-mist">{hint || (locked ? t.bs_hint_locked : tool === "move" ? t.bs_hint_move : tool === "design" ? t.bs_hint_design : tool === "tint" ? t.bs_hint_tint : t.bs_hint_draw)}</p>
+          <p className="pointer-events-none absolute inset-x-0 bottom-0 m-0 px-3 pb-3 text-center text-[12px] text-white/60">{hint || (locked ? t.bs_hint_locked : tool === "move" ? t.bs_hint_move : tool === "design" ? t.bs_hint_design : tool === "tint" ? t.bs_hint_tint : t.bs_hint_draw)}</p>
 
           {(!ready || swapping) && !fail && <div className="absolute inset-0 flex items-center justify-center"><span className="h-7 w-7 animate-spin rounded-full border-2 border-lilac border-t-transparent" /></div>}
           {fail && (
@@ -450,77 +503,70 @@ export function BodyStudio() {
         </div>
 
         {/* side panel */}
-        <aside className="lx-surface-strong flex w-full flex-col gap-5 p-5 lg:w-[320px]">
+        <aside className="flex w-full min-w-0 flex-col gap-5 rounded-2xl border border-white/10 bg-[#121311] p-4 sm:p-5 lg:w-[320px]">
           {place ? (
             <section className="flex flex-col gap-4">
-              <p className="m-0 text-[13px] font-semibold text-lilac">{t.bs_design}</p>
+              <p className="m-0 text-[13px] text-ash">{t.bs_design}</p>
               <div className="grid grid-cols-4 gap-1.5">
                 {DESIGNS.map((d) => (
-                  <button key={d} type="button" aria-pressed={place.src === d} onClick={() => startPlace(d).then(() => undefined)} className={`aspect-square border-2 bg-[#efece4] p-1 ${place.src === d ? "border-lilac" : "border-transparent"}`}><img src={d} alt="" className="h-full w-full object-contain" /></button>
+                  <button key={d} type="button" aria-pressed={place.src === d} onClick={() => startPlace(d).then(() => undefined)} className={`aspect-square rounded-xl bg-[#efece4] p-1.5 outline-offset-2 ${place.src === d ? "outline outline-2 outline-lilac" : ""}`}><img src={d} alt="" className="h-full w-full object-contain" /></button>
                 ))}
               </div>
-              <label className="lx-btn lx-btn-ghost relative !min-h-11 cursor-pointer text-sm">
+              <label className="relative flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-white/15 text-[14px] font-medium text-ivory">
                 {t.sim_design}
                 <input type="file" accept="image/*" className="absolute inset-0 cursor-pointer opacity-0" onChange={async (ev) => { const f = ev.target.files?.[0]; ev.target.value = ""; if (f) startPlace(await fileToDataUrl(f)); }} />
               </label>
               <Range label={t.m_size} value={place.wCm} min={1} max={60} step={0.5} unit=" cm" onChange={(n) => setPlace({ ...place, wCm: n })} />
               <Range label={t.m_rot} value={place.rot} min={-180} max={180} unit="°" onChange={(n) => setPlace({ ...place, rot: n })} />
               <p className="m-0 text-[12px] text-ash" dir="ltr">{place.wCm.toFixed(1)} × {(place.wCm * place.ratio).toFixed(1)} cm</p>
-              <Seg value={place.black ? 1 : 0} onChange={(i) => setPlace({ ...place, black: i === 1 })} labels={[t.sx_ink_orig, t.sx_ink_black]} />
+              <InkSwatches value={place.color} onChange={(c) => setPlace({ ...place, color: c })} />
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => { setPlace(null); setTool("move"); }} className="lx-btn lx-btn-ghost !min-h-11">{t.bs_cancel}</button>
-                <button type="button" onClick={applyPlace} className="lx-btn lx-btn-primary !min-h-11">{t.bs_apply}</button>
+                <button type="button" onClick={cancelPlace} className="min-h-12 rounded-xl border border-white/15 text-[14px] font-semibold text-ivory disabled:opacity-40">{t.bs_cancel}</button>
+                <button type="button" onClick={applyPlace} className="min-h-12 rounded-xl bg-lilac text-[14px] font-semibold text-[#0a0b09] disabled:opacity-40">{t.bs_apply}</button>
               </div>
             </section>
           ) : (
             <>
-              <div role="tablist" className="grid grid-cols-3 border border-[rgba(255,255,255,.12)]">
-                {(["brush", "layers", "skin"] as const).map((k) => (
-                  <button key={k} role="tab" type="button" aria-selected={panel === k} onClick={() => setPanel(k)} className={`min-h-10 text-[13px] ${panel === k ? "bg-ivory font-semibold text-night" : "text-mist"}`}>{k === "brush" ? t.bs_tab_brush : k === "layers" ? t.bs_tab_layers : t.bs_tab_skin}</button>
-                ))}
-              </div>
-              {panel === "brush" && (
-                <section className="flex flex-col gap-4">
+              <section className="flex flex-col gap-3">
+                <p className="m-0 text-[13px] text-ash">{t.bs_design}</p>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {DESIGNS.map((d) => (
+                    <button key={d} type="button" onClick={() => startPlace(d)} className="aspect-square rounded-xl bg-[#efece4] p-1.5 transition-transform active:scale-95"><img src={d} alt="" className="h-full w-full object-contain" /></button>
+                  ))}
+                </div>
+                <label className="relative flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/15 text-[14px] font-medium text-ivory">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 20h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  {t.sim_design}
+                  <input type="file" accept="image/*" className="absolute inset-0 cursor-pointer opacity-0" onChange={async (ev) => { const f = ev.target.files?.[0]; ev.target.value = ""; if (f) startPlace(await fileToDataUrl(f)); }} />
+                </label>
+                <button type="button" aria-expanded={letters} onClick={() => setLetters((v) => !v)} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border text-[14px] font-medium ${letters ? "border-lilac text-lilac" : "border-white/15 text-ivory"}`}>
+                  <span className="text-[17px]" style={{ fontFamily: '"UnifrakturMaguntia", serif' }}>Aa</span>{t.lt_title}
+                </button>
+                {letters && <LetteringPanel compact onUse={(url) => { setLetters(false); startPlace(url); }} />}
+              </section>
+              {tool !== "move" && tool !== "design" && (
+                <section className="flex flex-col gap-4 border-t border-white/10 pt-4">
                   <Range label={t.bs_size} value={sizeMm} min={0.2} max={20} step={0.1} unit=" mm" onChange={setSizeMm} />
-                  {tool !== "eraser" && <Range label={tool === "dots" ? t.bs_density : t.col_opacity} value={opacity} min={5} max={100} unit="%" onChange={setOpacity} />}
-                  {tool === "eraser" ? (
-                    <Seg value={eraseLayer === "ink" ? 0 : 1} onChange={(i) => setEraseLayer(i ? "sketch" : "ink")} labels={[t.bs_layer_ink, t.bs_layer_sketch]} />
-                  ) : tool === "sketch" ? (
-                    <ColorPicker value={sketchColor} onChange={setSketchColor} />
-                  ) : (
-                    <>
-                      <ColorPicker value={color} onChange={setColor} />
-                      <div className="grid grid-cols-8 gap-1.5">{INKS.map((c) => <button key={c} type="button" aria-label={c} aria-pressed={color === c} onClick={() => setColor(c)} className="aspect-square border-2" style={{ background: c, borderColor: color === c ? "#c4f135" : "rgba(255,255,255,.1)" }} />)}</div>
-                    </>
+                  {tool !== "eraser" && (
+                    <div className="grid grid-cols-8 gap-1.5">
+                      {INKS.slice(0, 7).map((c) => <button key={c} type="button" aria-label={c} aria-pressed={color === c} onClick={() => setColor(c)} className={`aspect-square rounded-full ${color === c ? "ring-2 ring-lilac ring-offset-2 ring-offset-[#121311]" : ""}`} style={{ background: c }} />)}
+                      <label aria-label="color" className="relative aspect-square cursor-pointer rounded-full border border-dashed border-white/30" style={{ background: INKS.slice(0, 7).includes(color) ? undefined : color }}>
+                        <input type="color" value={color} onChange={(ev) => setColor(ev.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
+                      </label>
+                    </div>
                   )}
                 </section>
               )}
-              {panel === "layers" && (
-                <section className="flex flex-col gap-2">
-                  {(["ink", "sketch"] as LayerName[]).map((l) => (
-                    <div key={l} className="flex items-center gap-3 border border-[rgba(255,255,255,.1)] px-3 py-2.5">
-                      <button type="button" aria-pressed={show[l]} onClick={() => toggleLayer(l)} aria-label={show[l] ? t.bs_hide : t.bs_show} className={`flex h-8 w-8 items-center justify-center ${show[l] ? "text-lilac" : "text-ash"}`}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">{show[l] ? <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" strokeWidth="1.6" /> : <path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1C3.6 7.8 2 12 2 12s4 7 10 7a9.8 9.8 0 0 0 5-1.4" stroke="currentColor" strokeWidth="1.6" />}</svg>
-                      </button>
-                      <span className="flex-1 text-sm">{l === "ink" ? t.bs_layer_ink : t.bs_layer_sketch}</span>
-                      <button type="button" onClick={() => e?.clearLayer(l)} className="text-[13px] text-mist underline underline-offset-4 hover:text-ivory">{t.bs_clear}</button>
-                    </div>
-                  ))}
-                  <p className="m-0 mt-1 text-[12px] leading-relaxed text-ash">{t.bs_layers_hint}</p>
-                </section>
-              )}
-              {panel === "skin" && (
-                <section className="flex flex-col gap-3">
-                  <div className="grid grid-cols-7 gap-1.5">
-                    {SKINS.map((c, i) => <button key={c} type="button" aria-label={i === 0 ? t.bs_clay : c} aria-pressed={skin === c} onClick={() => pickSkin(c)} className="aspect-square border-2" style={{ background: c, borderColor: skin === c ? "#c4f135" : "transparent" }} />)}
-                  </div>
-                  <p className="m-0 text-[12px] text-ash">{t.bs_skin_hint}</p>
-                </section>
-              )}
+              <section className="flex flex-col gap-2 border-t border-white/10 pt-4">
+                <p className="m-0 text-[13px] text-ash">{t.bs_tab_skin}</p>
+                <div className="flex gap-2">
+                  {SKINS.slice(1).map((c) => <button key={c} type="button" aria-label={c} aria-pressed={skin === c} onClick={() => pickSkin(c)} className={`h-8 w-8 rounded-full ${skin === c ? "ring-2 ring-lilac ring-offset-2 ring-offset-[#121311]" : ""}`} style={{ background: c }} />)}
+                </div>
+              </section>
               <div className="mt-auto flex flex-col gap-2">
-                <button type="button" disabled={!ready || !e?.hasInk()} onClick={removeTattoo} className="lx-btn lx-btn-ghost !min-h-11 !text-[#ffb4b4]">{t.bs_remove}</button>
-                <button type="button" disabled={!ready} onClick={makeStencil} className="lx-btn lx-btn-primary !min-h-11">{t.bs_stencil}</button>
-                <button type="button" disabled={!ready} onClick={() => e && downloadDataUrl(e.snapshot(), "lumink-body.png")} className="lx-btn lx-btn-ghost !min-h-11">{t.sim_save}</button>
+                <button type="button" disabled={!ready || !e?.hasInk()} onClick={removeTattoo} className="min-h-10 rounded-xl text-[13px] text-[#ffb4b4] underline-offset-4 hover:underline disabled:opacity-40">{t.bs_remove}</button>
+                <button type="button" disabled={!ready} onClick={makeStencil} className="min-h-12 rounded-xl bg-lilac text-[14px] font-semibold text-[#0a0b09] disabled:opacity-40">{t.bs_stencil}</button>
+                <button type="button" disabled={!ready} onClick={() => e && downloadDataUrl(e.snapshot(), "lumink-body.png")} className="min-h-12 rounded-xl border border-white/15 text-[14px] font-semibold text-ivory disabled:opacity-40">{t.sim_save}</button>
               </div>
             </>
           )}
@@ -529,7 +575,7 @@ export function BodyStudio() {
 
       {stencil && (
         <div role="dialog" aria-modal="true" aria-label={t.bs_stencil} className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,.7)] p-4" onClick={() => setStencil(null)}>
-          <div className="flex max-h-[92vh] w-full max-w-[720px] flex-col gap-4 bg-[#121310] p-5" onClick={(ev) => ev.stopPropagation()}>
+          <div className="flex max-h-[92vh] w-full max-w-[720px] flex-col gap-4 rounded-2xl bg-[#121310] p-5" onClick={(ev) => ev.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <p className="m-0 font-display text-lg font-semibold">{t.bs_stencil}</p>
               <p className="m-0 text-sm text-mist" dir="ltr">{stencil.w.toFixed(1)} × {stencil.h.toFixed(1)} cm</p>
@@ -537,10 +583,10 @@ export function BodyStudio() {
             <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-white p-3"><img src={stencil.url} alt="" className="max-h-[60vh] max-w-full" /></div>
             <p className="m-0 text-[12px] leading-relaxed text-ash">{t.bs_stencil_hint}</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <button type="button" onClick={mirrorStencil} aria-pressed={stencil.mirrored} className={`lx-btn !min-h-11 ${stencil.mirrored ? "lx-btn-primary" : "lx-btn-ghost"}`}>{t.sim_flip}</button>
-              <button type="button" onClick={() => downloadDataUrl(stencil.url, "lumink-stencil.png")} className="lx-btn lx-btn-ghost !min-h-11">{t.st_download}</button>
-              <button type="button" onClick={printStencil} className="lx-btn lx-btn-primary !min-h-11">{t.st_print}</button>
-              <button type="button" onClick={() => setStencil(null)} className="lx-btn lx-btn-ghost !min-h-11">{t.bs_close}</button>
+              <button type="button" onClick={mirrorStencil} aria-pressed={stencil.mirrored} className={`min-h-12 rounded-xl border text-[14px] font-semibold ${stencil.mirrored ? "border-lilac text-lilac" : "border-white/15 text-ivory"}`}>{t.sim_flip}</button>
+              <button type="button" onClick={() => downloadDataUrl(stencil.url, "lumink-stencil.png")} className="min-h-12 rounded-xl border border-white/15 text-[14px] font-semibold text-ivory disabled:opacity-40">{t.st_download}</button>
+              <button type="button" onClick={printStencil} className="min-h-12 rounded-xl bg-lilac text-[14px] font-semibold text-[#0a0b09] disabled:opacity-40">{t.st_print}</button>
+              <button type="button" onClick={() => setStencil(null)} className="min-h-12 rounded-xl border border-white/15 text-[14px] font-semibold text-ivory disabled:opacity-40">{t.bs_close}</button>
             </div>
           </div>
         </div>

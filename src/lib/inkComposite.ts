@@ -132,3 +132,18 @@ export function hasTransparency(img: CanvasImageSource & { width: number; height
   for (let i = 3; i < d.length; i += 4) if (d[i] < 200) n++;
   return n > 64 * 64 * 0.02;
 }
+
+/** Same as compositeInk, but `out` holds only the box (much cheaper than rewriting the whole frame). */
+export function compositeInkBox(out: ImageData, skin: ImageData, skinBlur: ImageData, inkData: ImageData, box: { x: number; y: number }, p: Placement) {
+  const full = new ImageData(out.width, out.height);
+  const W = skin.width, o = out.data, f = full.data, s = skin.data, sb = skinBlur.data;
+  // a box-sized view of the skin so the shared routine can run unchanged
+  const sk = new ImageData(out.width, out.height), skb = new ImageData(out.width, out.height);
+  for (let y = 0; y < out.height; y++) {
+    const src = ((y + box.y) * W + box.x) * 4, dst = y * out.width * 4, n = out.width * 4;
+    sk.data.set(s.subarray(src, src + n), dst); skb.data.set(sb.subarray(src, src + n), dst);
+  }
+  f.set(o);
+  compositeInk(full, sk, skb, inkData, { x: 0, y: 0 }, p);
+  o.set(f);
+}

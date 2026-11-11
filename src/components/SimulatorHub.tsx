@@ -13,9 +13,9 @@ export function SimulatorHub() {
   const [tab, setTab] = useState<"3d" | "photo">("3d");
   return (
     <div>
-      <div role="tablist" className="mb-4 flex gap-6 border-b border-[rgba(255,255,255,.1)]">
+      <div role="tablist" className="mb-4 inline-flex rounded-xl bg-white/5 p-1">
         {(["3d", "photo"] as const).map((k) => (
-          <button key={k} role="tab" type="button" aria-selected={tab === k} onClick={() => setTab(k)} className={`-mb-px min-h-12 border-b-2 text-[15px] font-semibold ${tab === k ? "border-lilac text-ivory" : "border-transparent text-mist hover:text-ivory"}`}>
+          <button key={k} role="tab" type="button" aria-selected={tab === k} onClick={() => setTab(k)} className={`min-h-10 rounded-lg px-5 text-[14px] font-semibold ${tab === k ? "bg-white text-[#0a0b09]" : "text-mist hover:text-ivory"}`}>
             {k === "3d" ? t.sim_tab_3d : t.sim_tab_photo}
           </button>
         ))}

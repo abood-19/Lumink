@@ -20,7 +20,7 @@ export default async function StudioBilling({ searchParams }: { searchParams: Pr
         {sp.paid && <p role="status" className="m-0 rounded-xl bg-[rgba(196,241,53,.14)] px-4 py-3 text-sm text-lilac-soft">{t.pay_ok}</p>}
         {profile && (
           <p className="m-0 text-sm text-ash">
-            {t.plan}: <span className="text-ivory">{profile.lifetime ? "Lifetime" : PLANS[profile.plan].name}</span> · {t.tokens}: <span className="text-ivory">{profile.lifetime ? "∞" : profile.tokens}</span>
+            {t.plan}: <span className="text-ivory">{profile.lifetime ? "Lifetime" : PLANS[profile.plan].name}</span> · {t.tokens}: <span className="text-ivory">{profile.lifetime || profile.plan !== "free" ? "∞" : profile.tokens}</span>
           </p>
         )}
         <div className="flex gap-2" role="tablist">
@@ -30,7 +30,7 @@ export default async function StudioBilling({ searchParams }: { searchParams: Pr
         </div>
         <div>
           <p className="m-0 mt-1 text-4xl font-bold" dir="ltr">${plan.price.toFixed(2)} <span className="text-base font-normal text-ash">{plan.period === "year" ? t.per_year : t.per_month}</span></p>
-          <p className="m-0 mt-2 text-sm text-ash">{plan.tokens} {t.tokens}</p>
+          <p className="m-0 mt-2 text-sm text-ash">{plan.price ? "∞" : plan.tokens} {t.tokens}</p>
         </div>
         <p className="m-0 text-sm leading-relaxed text-[#e8e8ee]">{t.checkout_soon}</p>
         {profile?.lifetime ? null : subscribed ? (

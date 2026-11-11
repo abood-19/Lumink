@@ -66,7 +66,7 @@ export function StudioShell({ user, demo, children }: { user: ShellUser; demo: b
             {user && user.tokens !== null && (
               <Link href="/studio/billing" className="flex min-h-10 items-center gap-2 rounded-full border border-[rgba(200,200,210,0.16)] px-3.5 text-[13px]">
                 <span className="text-ash">{t.tokens}</span>
-                <span className="font-semibold">{user.lifetime ? "∞" : user.tokens}</span>
+                <span className="font-semibold">{user.lifetime || user.paid ? "∞" : user.tokens}</span>
               </Link>
             )}
             <LangSwitcher />

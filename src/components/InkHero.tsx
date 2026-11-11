@@ -66,7 +66,7 @@ export function InkHero({ photo }: Props) {
             ref={host}
             role="img"
             aria-label={t.ih_pen}
-            className="absolute inset-x-0 top-0 h-[200px] cursor-grab touch-none active:cursor-grabbing data-[fallback]:hidden md:inset-x-auto md:inset-y-0 md:start-0 md:h-auto md:w-[24%]"
+            className="absolute inset-x-0 top-0 h-[260px] cursor-grab touch-none active:cursor-grabbing data-[fallback]:hidden md:inset-x-auto md:inset-y-0 md:start-0 md:h-auto md:w-[24%]"
           />
         </div>
       </div>

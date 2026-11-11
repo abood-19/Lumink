@@ -86,8 +86,8 @@
  "pro_desc": "Monthly plan for working artists",
  "gold_desc": "Yearly plan with everything",
  "tok_free": "50 tokens a month · 5 generations",
- "tok_pro": "600 tokens a month · 60 generations",
- "tok_gold": "2,000 tokens a month · 200 generations",
+ "tok_pro": "Unlimited AI generations",
+ "tok_gold": "Unlimited AI generations + priority",
  "free_f": [
   "Body simulator",
   "Stencil studio",

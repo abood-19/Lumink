@@ -6,6 +6,7 @@ import { SOCIALS } from "@/lib/site";
 import { usePathname } from "next/navigation";
 import { Arrow } from "./Decor";
 import { InkMachineMark, Wordmark } from "./Logo";
+import { FlashDraw } from "./FlashDraw";
 
 export function SocialIcon({ d, color = "#f3f3f5", size = 18 }: { d: string; color?: string; size?: number }) {
   return (
@@ -33,8 +34,9 @@ export function SiteFooter() {
         </section>
       )}
       <footer className="grid border-t border-[rgba(255,255,255,.08)] bg-night md:grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)]">
-        <div className="flex min-h-[320px] items-end justify-center bg-lilac p-8 md:p-12" dir="ltr">
-          <InkMachineMark className="h-auto w-full max-w-[420px]" />
+        <div className="relative flex min-h-[420px] items-end justify-center overflow-hidden bg-lilac p-8 md:p-12" dir="ltr">
+          <FlashDraw />
+          <div className="relative w-full max-w-[420px]"><InkMachineMark className="lx-machine-buzz h-auto w-full" /></div>
         </div>
         <div className="flex flex-col gap-10 px-6 py-14 md:px-14">
           <div className="flex flex-wrap items-start justify-between gap-6">
