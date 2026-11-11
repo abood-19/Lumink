@@ -248,5 +248,9 @@
  "tl_design": "Eskiz",
  "tl_pen": "Qalam",
  "tl_shade": "Soya",
- "tl_erase": "O‘chirg‘ich"
+ "tl_erase": "O‘chirg‘ich",
+ "ink_look": "Siyoh sozlamalari",
+ "ink_strength": "Rang kuchi",
+ "ink_sharp": "Aniqlik",
+ "ink_depth": "Chuqurlik (teri teksturasi)"
 }

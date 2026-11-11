@@ -15,6 +15,7 @@ const DESIGNS = ["tribal", "oni", "spine", "mask", "mandala", "geometry", "lette
 const SAMPLE = { src: "/photos/arm-left.png", pxPerCm: 212 / 10.5 };
 const BG = "#141513";
 const RESULT_LONG_SIDE = 3000;
+const mobile = typeof window !== "undefined" && matchMedia("(pointer: coarse)").matches;
 
 type Photo = { img: HTMLImageElement; w: number; h: number; pxPerCm: number };
 type Pose = { x: number; y: number; sizeCm: number; rot: number };
@@ -39,6 +40,7 @@ export function Simulator2D() {
   const [paint, setPaint] = useState<"whole" | "parts">("whole");
   const [fillColor, setFillColor] = useState<string>(INK_COLORS[2]);
   const [lettering, setLettering] = useState(false);
+  const [look, setLook] = useState({ strength: 0.7, sharp: 0.75, depth: 0.45 });
   // preview ink (light enough to move at 60 fps); the result is rebuilt at full resolution
   const design = useMemo(() => (designImg ? applyFills(prepareInk(designImg, color, 900), fills) : null), [designImg, color, fills]);
   const [designId, setDesignId] = useState("tribal");
@@ -218,8 +220,12 @@ export function Simulator2D() {
     const z = zoomDrag.current; if (!z) return;
     if (ptrs.current.size === 2 && z.d) {
       const [a, b] = [...ptrs.current.values()];
-      setZoom((q) => ({ ...q, s: clamp(z.s! * (Math.hypot(b.x - a.x, b.y - a.y) / z.d!), 1, 5) }));
-    } else if (ptrs.current.size === 1) setZoom((q) => ({ ...q, x: z.zx + e.clientX - z.x, y: z.zy + e.clientY - z.y }));
+      setZoom((q) => { const s2 = clamp(z.s! * (Math.hypot(b.x - a.x, b.y - a.y) / z.d!), 1, 5); return s2 <= 1.01 ? { s: 1, x: 0, y: 0 } : { ...q, s: s2 }; });
+    } else if (ptrs.current.size === 1) setZoom((q) => {
+      if (q.s <= 1.01) return { s: 1, x: 0, y: 0 };          // not zoomed: the photo stays put
+      const mx = (fit.w * (q.s - 1)) / 2, my = (fit.h * (q.s - 1)) / 2;
+      return { ...q, x: clamp(z.zx + e.clientX - z.x, -mx, mx), y: clamp(z.zy + e.clientY - z.y, -my, my) };
+    });
   };
 
   /* ---------- the realistic render ---------- */
@@ -238,27 +244,35 @@ export function Simulator2D() {
       const ink = document.createElement("canvas"); ink.width = out.width; ink.height = out.height;
       const ic = ink.getContext("2d", { willReadFrequently: true })!;
       const P = { x: pose.x * k, y: pose.y * k }, w = dW * k, h = dH * k, rot = (pose.rot * Math.PI) / 180;
-      const limb = findLimb(H.probe, H.probeK, P, rot, w);
-      const ink2 = applyFills(prepareInk(designImg!, color, 2048), fills);
-      const box = wrapOnto(ic, ink2, P, w, h, rot, limb, 0.35);
-      {
-        // clothing, hair and background always cover the tattoo, as they would in real life
-        const m = skinMask(H.probe, H.probeK, { x: box.x * H.probeK, y: box.y * H.probeK, x1: box.x1 * H.probeK, y1: box.y1 * H.probeK });
-        if (m) { ic.save(); ic.globalCompositeOperation = "destination-in"; ic.imageSmoothingQuality = "high"; ic.drawImage(m, 0, 0, ink.width, ink.height); ic.restore(); }
-      }
+      // where the bare skin is (clothing, hair and background will cover the ink)
+      const pk = H.probeK, half = Math.hypot(w, h) / 2;
+      const mask = skinMask(H.probe, pk, { x: (P.x - half) * pk, y: (P.y - half) * pk, x1: (P.x + half) * pk, y1: (P.y + half) * pk });
+      const maskData = mask ? mask.getContext("2d", { willReadFrequently: true })!.getImageData(0, 0, mask.width, mask.height) : null;
+      const limb = findLimb(H.probe, pk, P, rot, w, maskData);
+      const ink2 = applyFills(prepareInk(designImg!, color, mobile ? 1600 : 2048), fills);
+      const box = wrapOnto(ic, ink2, P, w, h, rot, limb, (1 - look.sharp) * 1.1);
+      if (mask) { ic.save(); ic.globalCompositeOperation = "destination-in"; ic.imageSmoothingQuality = "high"; ic.drawImage(mask, 0, 0, ink.width, ink.height); ic.restore(); }
       const bw = box.x1 - box.x, bh = box.y1 - box.y;
       if (bw > 0 && bh > 0) {
-        const place: Placement = { cx: P.x, cy: P.y, sizePx: Math.max(w, h), rot: pose.rot, flip: false, bend: 0, opacity: 0.95, healed: false, ink: "original" };
+        const place: Placement = { cx: P.x, cy: P.y, sizePx: Math.max(w, h), rot: pose.rot, flip: false, bend: 0, opacity: 0.95, healed: false, ink: "original", strength: look.strength, depth: look.depth };
         const region = g.getImageData(box.x, box.y, bw, bh);
         compositeInkBox(region, H.skin, H.blur, ic.getImageData(box.x, box.y, bw, bh), box, place);
         g.putImageData(region, box.x, box.y);
       }
-      setZoom({ s: 1, x: 0, y: 0 });
+      if (modeRef.current !== "result") setZoom({ s: 1, x: 0, y: 0 });
       setMode("result");
     } catch (e) {
       console.error(e); setError(t.sim3_error); setMode("edit");
     }
   };
+
+  const lookKey = JSON.stringify(look);
+  useEffect(() => {
+    if (modeRef.current !== "result") return;
+    const id = setTimeout(() => { tryOn(); }, 220);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookKey]);
 
   const save = () => { const cv = resultCv.current; if (cv) downloadDataUrl(cv.toDataURL("image/jpeg", 0.93), "lumink-tattoo.jpg"); };
 
@@ -294,7 +308,6 @@ export function Simulator2D() {
                 {editing && (
                   <>
                     <span className="pointer-events-none absolute -inset-1 rounded-md border border-white/60 shadow-[0_0_0_1px_rgba(0,0,0,.25)]" />
-                    <span className="pointer-events-none absolute -top-9 start-1/2 -translate-x-1/2 rounded-md bg-black/70 px-2 py-0.5 text-[11px] tabular-nums text-white rtl:translate-x-1/2" dir="ltr" style={{ transform: `rotate(${-pose.rot}deg)` }}>{pose.sizeCm.toFixed(1)} cm</span>
                     <span onPointerDown={onHandle("turn")} aria-label={t.m_rot} className="absolute -top-14 left-1/2 flex h-10 w-10 -translate-x-1/2 cursor-grab touch-none items-center justify-center rounded-full bg-white text-[#0a0b09] shadow-[0_4px_16px_rgba(0,0,0,.5)]">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     </span>
@@ -309,6 +322,11 @@ export function Simulator2D() {
           </div>
         </div>
 
+        {editing && design && f > 0 && (
+          <span className="pointer-events-none absolute left-3 top-3 rounded-lg bg-[#0a0b09] px-2.5 py-1.5 text-[13px] font-semibold tabular-nums leading-none text-white shadow-[0_2px_10px_rgba(0,0,0,.5)]" dir="ltr">
+            {(dW / (photo?.pxPerCm || 1)).toFixed(1)} × {(dH / (photo?.pxPerCm || 1)).toFixed(1)} cm
+          </span>
+        )}
         {/* one action on the photo */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center gap-2 p-4">
           {mode === "result" ? (
@@ -378,6 +396,12 @@ export function Simulator2D() {
             </>
           )}
         </section>
+        <section className="flex flex-col gap-4 border-t border-white/10 pt-4">
+          <p className="m-0 text-[13px] text-ash">{t.ink_look}</p>
+          <Range label={t.ink_strength} value={Math.round(look.strength * 100)} min={0} max={100} unit="%" onChange={(n) => setLook((l) => ({ ...l, strength: n / 100 }))} />
+          <Range label={t.ink_sharp} value={Math.round(look.sharp * 100)} min={0} max={100} unit="%" onChange={(n) => setLook((l) => ({ ...l, sharp: n / 100 }))} />
+          <Range label={t.ink_depth} value={Math.round(look.depth * 100)} min={0} max={100} unit="%" onChange={(n) => setLook((l) => ({ ...l, depth: n / 100 }))} />
+        </section>
         <p className="m-0 text-[12px] leading-relaxed text-ash">{t.sim_gesture_hint}</p>
       </aside>
     </div>
@@ -388,7 +412,7 @@ export function Simulator2D() {
 
 /** Full-resolution skin buffers for the compositor, plus a small blurred copy to read the body's shape from. */
 function prepareSkin(photo: Photo) {
-  const k = Math.min(3, RESULT_LONG_SIDE / Math.max(photo.w, photo.h));
+  const k = Math.min(3, (mobile ? 2200 : RESULT_LONG_SIDE) / Math.max(photo.w, photo.h));
   const W = Math.round(photo.w * k), H = Math.round(photo.h * k);
   const base = document.createElement("canvas"); base.width = W; base.height = H;
   const bg = base.getContext("2d", { willReadFrequently: true })!;
@@ -411,7 +435,7 @@ type Limb = { c: number; r: number } | null;
  * Finds the limb under the design: walks across it (along the design's horizontal axis) from the centre
  * until the colour breaks away from the skin. Returns the limb's centre offset and radius, or null on a flat area.
  */
-function findLimb(probe: ImageData, pk: number, P: { x: number; y: number }, rot: number, designW: number): Limb {
+function findLimb(probe: ImageData, pk: number, P: { x: number; y: number }, rot: number, designW: number, mask: ImageData | null = null): Limb {
   const { width: W, height: H, data } = probe;
   const px = P.x * pk, py = P.y * pk, dx = Math.cos(rot), dy = Math.sin(rot);
   const at = (x: number, y: number) => {
@@ -425,7 +449,23 @@ function findLimb(probe: ImageData, pk: number, P: { x: number; y: number }, rot
   const C = [cr / n, cg / n, cb / n];
   const dist = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
   const max = Math.hypot(W, H);
+  const skinAt = (x: number, y: number) => {
+    const xi = Math.round(x), yi = Math.round(y);
+    if (!mask || xi < 0 || yi < 0 || xi >= W || yi >= H) return -1;
+    return mask.data[(yi * W + xi) * 4 + 3];
+  };
   const walk = (s: number) => {
+    if (mask && skinAt(px, py) > 140) {
+      // follow the bare skin to its edge: robust on busy phone photos
+      let off = 0;
+      for (let t = 1; t < max; t++) {
+        const v = skinAt(px + dx * t * s, py + dy * t * s);
+        if (v < 0) return { t, open: true };
+        off = v < 90 ? off + 1 : 0;
+        if (off >= 3) return { t: t - 2, open: false };
+      }
+      return { t: max, open: true };
+    }
     const hist: number[][] = [];
     for (let t = 1; t < max; t++) {
       const c = at(px + dx * t * s, py + dy * t * s);
@@ -441,7 +481,7 @@ function findLimb(probe: ImageData, pk: number, P: { x: number; y: number }, rot
   const width = (a.t + b.t) / pk;
   const across = Math.abs(dx) * W + Math.abs(dy) * H;
   // nothing to wrap around: an edge wasn't found, or the "limb" fills the photo (back, chest)
-  if ((a.open && b.open) || (a.t + b.t) > across * 0.8 || width < designW * 0.25) return null;
+  if ((a.open && b.open) || (a.t + b.t) > across * 0.8 || width < designW * 0.55) return null;
   return { c: (a.t - b.t) / 2 / pk, r: width / 2 };
 }
 

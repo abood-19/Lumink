@@ -7,6 +7,7 @@ import { ColorPicker } from "./ColorPicker";
 import { INK_COLORS, prepareInk } from "@/lib/inkPrep";
 import { InkSwatches } from "./InkSwatches";
 import { LetteringPanel } from "./LetteringPanel";
+import { recognize, type Pt } from "@/lib/shapes";
 import { HANDOFF_KEY } from "./Simulator2D";
 import type { BodyStudio as Engine, BrushKind, Gender, LayerName, RegionName } from "@/lib/three/bodyPaint";
 
@@ -223,20 +224,39 @@ export function BodyStudio() {
     cancelAnimationFrame(s.raf); s.raf = 0;
     const e = eng.current; if (!e) return;
     const pts = strokePts.current, kind = live.current.tool;
-    if ((kind === "liner" || kind === "sketch" || kind === "eraser") && isStraight(pts)) {
+    const assist = kind === "liner" || kind === "sketch";
+    // redraws the stroke(s) just made as a clean outline
+    const redraw = (outline: Pt[], undoCount: number) => {
       e.cancel();
-      const a = pts[0], b = pts[pts.length - 1];
+      for (let i = 0; i < undoCount; i++) e.undoStep();
       straightening.current = true;
-      if (startStroke(a.x, a.y, 1)) {
-        const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 3));
-        for (let i = 1; i <= n; i++) { st.current.smooth = null; dab(a.x + ((b.x - a.x) * i) / n, a.y + ((b.y - a.y) * i) / n, 1); }
+      if (startStroke(outline[0].x, outline[0].y, 1)) {
+        for (let k = 1; k < outline.length; k++) {
+          const a = outline[k - 1], b = outline[k], n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 3));
+          for (let i = 1; i <= n; i++) { st.current.smooth = null; dab(a.x + ((b.x - a.x) * i) / n, a.y + ((b.y - a.y) * i) / n, 1); }
+        }
         st.current.drawing = false;
       }
       straightening.current = false;
-    }
+    };
+    let drawn: Pt[] = pts;
+    const single = assist ? recognize(pts) : null;
+    if (single) { redraw(single, 0); drawn = single; chain.current = null; }
+    else if ((assist || kind === "eraser") && isStraight(pts)) { const line = [pts[0], pts[pts.length - 1]]; redraw(line, 0); drawn = line; }
     e.update();
     e.end();
+    if (!assist || single || drawn.length < 2) return;
+    // several strokes that join up (four lines of a square, two halves of a heart) become one shape
+    const now = performance.now(), c = chain.current;
+    const near = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y) < 32;
+    if (c && now - c.t < 4000 && (near(c.pts[c.pts.length - 1], drawn[0]) || near(c.pts[c.pts.length - 1], drawn[drawn.length - 1]))) {
+      const seg = near(c.pts[c.pts.length - 1], drawn[0]) ? drawn : [...drawn].reverse();
+      chain.current = { pts: [...c.pts, ...seg.slice(1)], count: c.count + 1, t: now };
+      const shape = recognize(chain.current.pts);
+      if (shape) { redraw(shape, chain.current.count); e.update(); e.end(); chain.current = null; }
+    } else chain.current = { pts: drawn, count: 1, t: now };
   };
+  const chain = useRef<{ pts: Pt[]; count: number; t: number } | null>(null);
 
   const local = (ev: { clientX: number; clientY: number }) => {
     const r = host.current!.getBoundingClientRect();

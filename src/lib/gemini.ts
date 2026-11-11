@@ -8,7 +8,19 @@ const BASE = "https://generativelanguage.googleapis.com/v1beta";
 const TEXT_MODELS = [process.env.GEMINI_TEXT_MODEL, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite"].filter(Boolean) as string[];
 const IMAGE_MODELS = [process.env.GEMINI_IMAGE_MODEL, "gemini-2.5-flash-image", "gemini-3-pro-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"].filter(Boolean) as string[];
 
-export const geminiConfigured = Boolean(KEY);
+// Cloudflare Workers AI: ~170 free images a day, then about $0.0006 per image (the cheapest option).
+const CF_ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID ?? "";
+const CF_TOKEN = process.env.CLOUDFLARE_AI_TOKEN ?? "";
+const CF = Boolean(CF_ACCOUNT && CF_TOKEN);
+export const geminiConfigured = Boolean(KEY) || CF;
+
+async function cfRun(model: string, body: Record<string, unknown>) {
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/ai/run/${model}`, {
+    method: "POST", headers: { authorization: `Bearer ${CF_TOKEN}`, "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Cloudflare ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return (await res.json()) as { result?: { image?: string; response?: string } };
+}
 
 type Part = { text?: string; inlineData?: { mimeType: string; data: string } };
 class ModelGone extends Error {}
@@ -63,13 +75,18 @@ async function withFallback(kind: "text" | "image", parts: Part[], cfg?: Record<
  * kind "prompt": must describe a tattoo design. kind "post": must be about tattoos and respectful.
  */
 export async function moderate(text: string, kind: "prompt" | "post"): Promise<boolean> {
-  if (!KEY) return true;
+  if (!KEY && !CF) return true;
   const rule =
     kind === "prompt"
       ? "Answer YES only if the text describes an image that could be a tattoo design (any subject is fine as a tattoo motif, in any language). Answer NO for anything else: questions, chat, code, homework, requests unrelated to a tattoo, sexual content, hate symbols, or real private people."
       : "Answer YES only if this social post caption is about tattoos (artwork, healing, studios, styles, artists) and contains no insults, hate, harassment or sexual content. Any language. Otherwise answer NO.";
   try {
-    const parts = await withFallback("text", [{ text: `${rule}\nReply with exactly YES or NO.\n---\n${text.slice(0, 2000)}` }], { temperature: 0 });
+    const q = `${rule}\nReply with exactly YES or NO.\n---\n${text.slice(0, 2000)}`;
+    if (!KEY) {
+      const r = await cfRun("@cf/meta/llama-3.1-8b-instruct", { messages: [{ role: "user", content: q }], max_tokens: 3, temperature: 0 });
+      return (r.result?.response ?? "").trim().toUpperCase().startsWith("YES");
+    }
+    const parts = await withFallback("text", [{ text: q }], { temperature: 0 });
     return (parts.map((p) => p.text ?? "").join("") || "").trim().toUpperCase().startsWith("YES");
   } catch (e) {
     // The checker being down must not block paying users; the image prompt itself still restricts output to tattoo art.
@@ -94,8 +111,23 @@ export async function generateLineArt(prompt: string, style: string, mode: GenMo
     style ? `Tattoo style: ${style}.` : "",
     `${look} No text, no watermark, no signature, no skin, no body, no frame, no mockup. Centered, the whole design visible with margin around it.`,
   ].join("\n");
-  const parts = await withFallback("image", [{ text: instruction }], { responseModalities: ["IMAGE", "TEXT"] });
-  const img = parts.find((p) => p.inlineData?.data);
-  if (!img?.inlineData) throw new Error("No image returned");
-  return `data:${img.inlineData.mimeType};base64,${img.inlineData.data}`;
+  // cheapest first; the other provider takes over if one fails or runs out
+  const order = (process.env.AI_IMAGE_ORDER ?? "cloudflare,gemini").split(",").map((x) => x.trim());
+  let lastErr: unknown = new Error("No image provider configured");
+  for (const provider of order) {
+    try {
+      if (provider === "cloudflare" && CF) {
+        const r = await cfRun("@cf/black-forest-labs/flux-1-schnell", { prompt: instruction.replace(/\n/g, " "), steps: 6 });
+        if (r.result?.image) return `data:image/jpeg;base64,${r.result.image}`;
+        throw new Error("Cloudflare returned no image");
+      }
+      if (provider === "gemini" && KEY) {
+        const parts = await withFallback("image", [{ text: instruction }], { responseModalities: ["IMAGE", "TEXT"] });
+        const img = parts.find((p) => p.inlineData?.data);
+        if (img?.inlineData) return `data:${img.inlineData.mimeType};base64,${img.inlineData.data}`;
+        throw new Error("Gemini returned no image");
+      }
+    } catch (e) { lastErr = e; console.error(provider, e); }
+  }
+  throw lastErr;
 }

@@ -15,6 +15,8 @@ export type Placement = {
   opacity: number;             // 0..1
   healed: boolean;
   ink: InkMode;
+  strength?: number;            // 0..1 — how solidly the ink covers the skin tone
+  depth?: number;               // 0..1 — how much skin texture and shading shows through
 };
 
 /** Scales a design so its longest side is `sizePx`. */
@@ -73,7 +75,8 @@ export function compositeInk(out: ImageData, skin: ImageData, skinBlur: ImageDat
       const ki = (y * bw + x) * 4;
       let a = k[ki + 3] / 255;
       if (a <= 0.003) continue;
-      a *= p.opacity * (p.healed ? 0.9 : 1);
+      const st = p.strength ?? 0.5, dp = p.depth ?? 0.5;
+      a = Math.min(1, a * p.opacity * (p.healed ? 0.9 : 1) * (0.85 + 0.4 * st));
       const si = ((y + box.y) * W + (x + box.x)) * 4;
       if (s[si + 3] === 0) continue;
       let ir: number, ig: number, ib: number;
@@ -86,16 +89,16 @@ export function compositeInk(out: ImageData, skin: ImageData, skinBlur: ImageDat
       a *= 0.9 + 0.1 * (n - Math.floor(n));
       // Ink sits under a thin translucent layer of skin: part painted colour lit by the limb's own
       // form lighting (from the blurred skin), part multiplied so the skin tone shows through.
-      const shade = Math.min(1.25, Math.max(0.3, lum(sb, si) / 185));
-      const mixN = 0.42;
+      const shade = 1 + (Math.min(1.25, Math.max(0.3, lum(sb, si) / 185)) - 1) * (0.4 + 1.2 * dp);
+      const mixN = 0.2 + 0.75 * st;   // stronger ink covers more of the skin tone underneath
       let r = sr * (1 - a) + a * (mixN * ir * shade + (1 - mixN) * ((sr * ir) / 255));
       let g = sg * (1 - a) + a * (mixN * ig * shade + (1 - mixN) * ((sg * ig) / 255));
       let b = sbv * (1 - a) + a * (mixN * ib * shade + (1 - mixN) * ((sbv * ib) / 255));
       // keep the pores and fine texture of the skin inside the ink
-      const tex = (lum(s, si) - lum(sb, si)) * 0.5 * a;
+      const tex = (lum(s, si) - lum(sb, si)) * dp * a;
       r += tex; g += tex; b += tex;
       // the skin's own specular detail stays on top of the ink
-      const hl = Math.max(0, lum(s, si) - lum(sb, si) - 6) * 1.1 * a;
+      const hl = Math.max(0, lum(s, si) - lum(sb, si) - 6) * 2.2 * dp * a;
       r += hl; g += hl; b += hl;
       o[si] = r; o[si + 1] = g; o[si + 2] = b;
     }

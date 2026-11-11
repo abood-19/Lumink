@@ -248,5 +248,9 @@
  "tl_design": "تصميم",
  "tl_pen": "قلم",
  "tl_shade": "ظل",
- "tl_erase": "ممحاة"
+ "tl_erase": "ممحاة",
+ "ink_look": "ضبط الحبر",
+ "ink_strength": "قوة اللون",
+ "ink_sharp": "الحدّة",
+ "ink_depth": "العمق (ملمس الجلد)"
 }

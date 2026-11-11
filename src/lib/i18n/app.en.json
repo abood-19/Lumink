@@ -248,5 +248,9 @@
  "tl_design": "Design",
  "tl_pen": "Pen",
  "tl_shade": "Shade",
- "tl_erase": "Eraser"
+ "tl_erase": "Eraser",
+ "ink_look": "Ink look",
+ "ink_strength": "Colour strength",
+ "ink_sharp": "Sharpness",
+ "ink_depth": "Depth (skin texture)"
 }
