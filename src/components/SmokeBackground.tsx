@@ -23,7 +23,9 @@ export function SmokeBackground() {
   useEffect(() => {
     const cv = ref.current;
     if (!cv) return;
-    const gl = cv.getContext("webgl", { antialias: false, alpha: false });
+    const still = window.matchMedia("(pointer: coarse)").matches || (navigator.hardwareConcurrency || 8) <= 4;
+    // a still frame must stay on screen without redrawing, so keep its buffer
+    const gl = cv.getContext("webgl", { antialias: false, alpha: false, preserveDrawingBuffer: still });
     if (!gl) return;
     const mk = (type: number, src: string) => {
       const s = gl.createShader(type)!;
@@ -52,13 +54,12 @@ export function SmokeBackground() {
     const reduce = false;
     const slow = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.5 : 1;
     const t0 = performance.now();
-    // Phones: half resolution and ~24 fps, so the page's photos and the simulator keep the GPU memory they need.
-    const phone = window.matchMedia("(pointer: coarse)").matches;
-    let raf = 0, last = 0;
-    const frame = (now: number) => {
-      if (phone && now - last < 40) { raf = requestAnimationFrame(frame); return; }
-      last = now;
-      const dpr = phone ? 0.5 : Math.min(window.devicePixelRatio || 1, 1.25) * 0.75;
+    const cleanup: (() => void)[] = [];
+    // Phones and tablets: one still frame of the smoke (no per-frame GPU work), redrawn only on resize.
+    // Everywhere: the smoke stops while the 3D simulator is open, so the body gets the whole GPU.
+    let raf = 0;
+    const draw = (now: number) => {
+      const dpr = still ? 0.5 : Math.min(window.devicePixelRatio || 1, 1.25) * 0.75;
       const w = Math.max(1, Math.floor(cv.clientWidth * dpr));
       const h = Math.max(1, Math.floor(cv.clientHeight * dpr));
       if (cv.width !== w || cv.height !== h) {
@@ -67,16 +68,26 @@ export function SmokeBackground() {
         gl.viewport(0, 0, w, h);
       }
       gl.uniform2f(uR, w, h);
-      gl.uniform1f(uT, reduce ? 30 : ((now - t0) / 1000) * slow);
+      gl.uniform1f(uT, still ? 40 : ((now - t0) / 1000) * slow);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      if (!reduce && !document.hidden) raf = requestAnimationFrame(frame);
     };
+    const frame = (now: number) => {
+      if (still || !document.documentElement.classList.contains("lx-sim-on")) draw(now);
+      if (!still && !reduce && !document.hidden) raf = requestAnimationFrame(frame);
+    };
+    if (still) {
+      let id = 0;
+      const onResize = () => { cancelAnimationFrame(id); id = requestAnimationFrame(() => draw(0)); };
+      window.addEventListener("resize", onResize);
+      cleanup.push(() => window.removeEventListener("resize", onResize));
+    }
     raf = requestAnimationFrame(frame);
     const onVis = () => {
-      if (!document.hidden && !reduce) raf = requestAnimationFrame(frame);
+      if (!document.hidden && !reduce && !still) raf = requestAnimationFrame(frame);
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
+      cleanup.forEach((f) => f());
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVis);
     };

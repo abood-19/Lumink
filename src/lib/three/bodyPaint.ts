@@ -202,6 +202,8 @@ export type StudioOptions = {
   onRegion?: (r: RegionName | null) => void;
   onChange?: () => void;
   onScale?: (pxPerCm: number) => void;
+  /** The browser took the GPU context away (memory pressure on phones): the host rebuilds the engine. */
+  onLost?: () => void;
 };
 
 export class BodyStudio {
@@ -254,7 +256,7 @@ export class BodyStudio {
     this.canvas = this.renderer.domElement;
     this.canvas.style.touchAction = "none";
     // let the browser give the GPU context back after it drops it (sleep, tab switch, GPU reset on phones)
-    this.canvas.addEventListener("webglcontextlost", (e) => e.preventDefault());
+    this.canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); if (!this.disposed) setTimeout(() => this.opts.onLost?.(), 300); });
     this.canvas.addEventListener("webglcontextrestored", () => { this.dirty = true; });
     this.canvas.style.display = "block";
     host.appendChild(this.canvas);
@@ -941,6 +943,7 @@ export class BodyStudio {
     this.clearAll();
     this.depthRT.dispose();
     this.renderer.dispose();
+    this.renderer.forceContextLoss(); // give the GPU context back now, or a few re-opens exhaust the browser's limit
     this.canvas.remove();
   }
 

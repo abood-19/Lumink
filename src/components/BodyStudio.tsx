@@ -75,7 +75,7 @@ export function BodyStudio() {
       try {
         const { BodyStudio: E } = await import("@/lib/three/bodyPaint");
         if (disposed || !host.current) return;
-        const e = new E(host.current, { onRegion: setRegion, onChange: () => bump((n) => n + 1), onScale: setCssPxPerCm });
+        const e = new E(host.current, { onRegion: setRegion, onChange: () => bump((n) => n + 1), onScale: setCssPxPerCm, onLost: () => setAttempt((n) => n + 1) });
         eng.current = e;
         if (location.search.includes("lxrender")) (window as unknown as { __lxStudio?: unknown }).__lxStudio = e;
         await e.load();
@@ -90,6 +90,12 @@ export function BodyStudio() {
     return () => { disposed = true; eng.current?.dispose(); eng.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
+
+  // while the 3D body is on screen, the page's smoke background stops drawing
+  useEffect(() => {
+    document.documentElement.classList.add("lx-sim-on");
+    return () => document.documentElement.classList.remove("lx-sim-on");
+  }, []);
 
   useEffect(() => { eng.current?.setNavigate(tool === "move" || (tool === "design" && !place)); }, [tool, ready, place]);
   useEffect(() => { eng.current?.setLocked(locked); }, [locked, ready]);

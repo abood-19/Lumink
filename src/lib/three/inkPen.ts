@@ -343,6 +343,7 @@ export function mountInkPen(host: HTMLElement, opts: { horizontal?: boolean } = 
     });
     env.dispose();
     renderer.dispose();
+    renderer.forceContextLoss();
     el.remove();
   };
 }

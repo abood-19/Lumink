@@ -121,17 +121,49 @@ export function ToolMenu({ tools }: { tools: MenuTool[] }) {
   );
 }
 
-/** Marquees stop while off screen, so phones keep the photos decoded instead of dropping them to black. */
-function usePauseOffscreen<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
+/** Small copies of the photos for the moving rows (decoded size matters on phones). */
+const thumb = (src: string) => (/\/photos\/p-[^/]+\.jpg$/.test(src) ? src.replace("/photos/", "/photos/t/") : src);
+
+/**
+ * A row that drifts on its own and can be swiped. It scrolls a normal scroller instead of moving one huge
+ * GPU layer, so phones (iPhone included) never drop the photos to black. Pauses off screen and while touched.
+ */
+function DriftRow({ reverse = false, speed = 28, className = "", children }: { reverse?: boolean; speed?: number; className?: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(([e]) => el.classList.toggle("lx-paused", !e.isIntersecting), { rootMargin: "200px 0px" });
+    const el = ref.current; if (!el) return;
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let visible = false, held = false, resume = 0, raf = 0, last = 0, pos = -1;
+    const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { rootMargin: "100px 0px" });
     io.observe(el);
-    return () => io.disconnect();
-  }, []);
-  return ref;
+    const hold = () => { held = true; clearTimeout(resume); };
+    const free = () => { clearTimeout(resume); resume = window.setTimeout(() => { held = false; pos = el.scrollLeft; }, 1600); };
+    el.addEventListener("pointerdown", hold); el.addEventListener("touchstart", hold, { passive: true });
+    el.addEventListener("pointerup", free); el.addEventListener("touchend", free); el.addEventListener("pointercancel", free);
+    el.addEventListener("wheel", () => { hold(); free(); }, { passive: true });
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const half = el.scrollWidth / 2;
+      if (pos < 0) pos = reverse ? half : 0;
+      if (held) {
+        // keep the loop seamless while the user swipes
+        if (el.scrollLeft >= half) el.scrollLeft -= half; else if (el.scrollLeft <= 0) el.scrollLeft += half;
+        return;
+      }
+      if (!visible || document.hidden || still) return;
+      pos += (reverse ? -1 : 1) * speed * dt;
+      if (pos >= half) pos -= half; else if (pos <= 0) pos += half;
+      el.scrollLeft = pos;
+    };
+    raf = requestAnimationFrame((t) => { last = t; tick(t); });
+    return () => { cancelAnimationFrame(raf); io.disconnect(); clearTimeout(resume); };
+  }, [reverse, speed]);
+  return (
+    <div ref={ref} dir="ltr" className={`no-scrollbar overflow-x-auto overscroll-x-contain ${className}`}>
+      <div className="flex w-max gap-3">{children}</div>
+    </div>
+  );
 }
 
 export type Shot = { src: string; alt: string };
@@ -142,16 +174,14 @@ export function WorkStrip({ shots }: { shots: Shot[] }) {
   const list = shots.filter((s) => !broken.includes(s.src));
   const half = Math.ceil(list.length / 2);
   const rows = [list.slice(0, half), list.slice(half)];
-  const root = usePauseOffscreen<HTMLDivElement>();
   return (
-    <div ref={root} className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       {rows.map((row, r) => row.length > 0 && (
-        <div key={r} dir="ltr" className="overflow-hidden">
-          <div className={`${r ? "lx-tick-rev" : "lx-tick"} flex w-max gap-3 [animation-duration:90s] hover:[animation-play-state:paused]`}>
-            {[...row, ...row, ...row].map((s, i) => (
+        <DriftRow key={r} reverse={r === 1}>
+            {[...row, ...row].map((s, i) => (
               <div key={i} aria-hidden={i >= row.length} className="group h-[260px] w-[200px] flex-none overflow-hidden bg-[#151612] sm:h-[400px] sm:w-[300px]">
                 <img
-                  src={s.src}
+                  src={thumb(s.src)}
                   alt={i < row.length ? s.alt : ""}
                   loading="eager"
                   decoding="async"
@@ -161,8 +191,7 @@ export function WorkStrip({ shots }: { shots: Shot[] }) {
                 />
               </div>
             ))}
-          </div>
-        </div>
+        </DriftRow>
       ))}
     </div>
   );
@@ -174,25 +203,22 @@ export type DepthShot = { src: string; alt: string };
 export function DepthGallery({ shots, title, sub }: { shots: DepthShot[]; title: string; sub: string }) {
   const half = Math.ceil(shots.length / 2);
   const rows = [shots.slice(0, half), shots.slice(half)];
-  const root = usePauseOffscreen<HTMLElement>();
   return (
-    <section ref={root} aria-label={title} className="relative overflow-hidden bg-[#080808] py-24 md:py-32">
+    <section aria-label={title} className="relative overflow-hidden bg-[#080808] py-24 md:py-32">
       <div className="mx-auto mb-12 grid max-w-[1320px] gap-6 px-6 md:grid-cols-[minmax(0,1fr)_minmax(0,.8fr)] md:items-end">
         <h2 className="m-0 font-display text-[clamp(32px,4.6vw,64px)] font-bold uppercase leading-[.98] tracking-[-0.01em] text-[#E1E5E5]">{title}</h2>
         <p className="m-0 max-w-[460px] text-[17px] leading-relaxed text-[#C0C4C6] md:justify-self-end">{sub}</p>
       </div>
       <div className="flex flex-col gap-4" dir="ltr">
         {rows.map((row, r) => (
-          <div key={r} className="group/row overflow-hidden">
-            <div className={`${r ? "lx-tick-rev" : "lx-tick"} flex w-max gap-4 group-hover/row:[animation-play-state:paused]`} style={{ animationDuration: r ? "90s" : "75s" }}>
+          <DriftRow key={r} reverse={r === 1} speed={r ? 22 : 26}>
               {[...row, ...row].map((s, i) => (
                 <figure key={i} className="group relative m-0 h-[clamp(260px,34vw,440px)] shrink-0 overflow-hidden rounded-[4px] bg-[#111]" style={{ aspectRatio: i % 3 === 1 ? "4 / 3" : "4 / 5" }} aria-hidden={i >= row.length || undefined}>
-                  <img src={s.src} alt={i < row.length ? s.alt : ""} loading="eager" decoding="async" draggable={false} className="h-full w-full object-cover md:grayscale-[.5] md:transition md:duration-700 md:group-hover:scale-[1.04] md:group-hover:grayscale-0" />
+                  <img src={thumb(s.src)} alt={i < row.length ? s.alt : ""} loading="eager" decoding="async" draggable={false} className="h-full w-full object-cover md:grayscale-[.5] md:transition md:duration-700 md:group-hover:scale-[1.04] md:group-hover:grayscale-0" />
                   <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[rgba(0,0,0,.75)] to-transparent px-4 pb-3 pt-10 text-[12px] uppercase tracking-[.12em] text-[rgba(255,255,255,.75)] opacity-0 transition group-hover:opacity-100">{s.alt}</figcaption>
                 </figure>
               ))}
-            </div>
-          </div>
+          </DriftRow>
         ))}
       </div>
     </section>
