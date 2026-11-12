@@ -30,7 +30,7 @@
  "st_width": "Print width, cm",
  "st_print": "Print stencil",
  "st_download": "Download PNG",
- "gen_placeholder": "Describe the tattoo: subject, style, placement…",
+ "gen_placeholder": "Describe the tattoo in any language, e.g. a fine-line wolf, or a colour rose. The generator picks the style and drawing type itself.",
  "gen_style": "Style",
  "gen_btn": "Generate sketch",
  "gen_working": "Drawing your sketch…",

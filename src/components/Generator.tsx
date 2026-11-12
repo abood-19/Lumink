@@ -6,50 +6,74 @@ import { useI18n } from "@/lib/i18n/client";
 import { downloadDataUrl } from "@/lib/store";
 import { HANDOFF_KEY } from "./Simulator2D";
 import { STENCIL_HANDOFF_KEY } from "./StencilStudio";
-import { FlashArt } from "./Flash";
-import type { FlashName } from "@/lib/flash";
+import { autoMode, tattooPrompt } from "@/lib/genPrompt";
 
-const STYLES: { id: string; name: string; art: FlashName }[] = [
-  { id: "fineline", name: "Fine line", art: "sparkle" },
-  { id: "blackwork", name: "Blackwork", art: "bolt" },
-  { id: "traditional", name: "Traditional", art: "anchor" },
-  { id: "neotrad", name: "Neo-traditional", art: "dagger" },
-  { id: "realism", name: "Realism", art: "eye" },
-  { id: "irezumi", name: "Irezumi", art: "waves" },
-  { id: "dotwork", name: "Dotwork", art: "sun" },
-  { id: "geometric", name: "Geometric", art: "star" },
-  { id: "minimal", name: "Minimal", art: "heart" },
-  { id: "script", name: "Script", art: "lucky" },
-  { id: "sigil", name: "Cyber sigilism", art: "sigil" },
-  { id: "ornamental", name: "Ornamental", art: "webs" },
-];
+/** Free fallback that works from the browser with no keys (static site, or before the server keys are set). */
+const FREE_IMG = "https://image.pollinations.ai/prompt/";
+const FREE_TXT = "https://text.pollinations.ai/";
+
+async function withTimeout(url: string, ms: number) {
+  const c = new AbortController(); const id = setTimeout(() => c.abort(), ms);
+  try { return await fetch(url, { signal: c.signal }); } finally { clearTimeout(id); }
+}
+
+async function freeEnglish(text: string) {
+  if (!/[^\x00-\x7F]/.test(text)) return text;
+  try {
+    const q = `Translate this tattoo idea into one short English description for an image model. Keep every detail, add nothing. Reply with the description only: ${text}`;
+    const r = await withTimeout(FREE_TXT + encodeURIComponent(q) + "?referrer=lumink", 12000);
+    const out = r.ok ? (await r.text()).trim() : "";
+    return out && out.length < 600 ? out : text;
+  } catch { return text; }
+}
+
+async function freeGenerate(text: string): Promise<string> {
+  const prompt = tattooPrompt(await freeEnglish(text), autoMode(text));
+  const url = `${FREE_IMG}${encodeURIComponent(prompt)}?width=1024&height=1024&model=flux&nologo=true&seed=${Math.floor(Math.random() * 1e9)}&referrer=lumink`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await withTimeout(url, 90000);
+      if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 16000)); continue; } // anonymous tier: one image per ~15 s
+      if (!r.ok) throw new Error(String(r.status));
+      const blob = await r.blob();
+      return await new Promise<string>((ok, bad) => { const fr = new FileReader(); fr.onload = () => ok(fr.result as string); fr.onerror = bad; fr.readAsDataURL(blob); });
+    } catch (e) { if (attempt === 1) throw e; }
+  }
+  throw new Error("busy");
+}
 
 export function Generator() {
   const { t } = useI18n();
   const [prompt, setPrompt] = useState("");
-  const [style, setStyle] = useState(STYLES[0].name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<string[]>([]);
-  const [mode, setMode] = useState<"line" | "shaded" | "color">("line");
   const [left, setLeft] = useState<string | number | null>(null);
 
   const run = async (e: React.FormEvent) => {
     e.preventDefault();
+    const text = prompt.trim(); if (!text) return;
     setBusy(true);
     setError(null);
-    let res: Response;
+    const add = (img: string) => setResults((r) => [img, ...r].slice(0, 12));
+    // 1. our server (Cloudflare / Gemini, counts the plan's tokens)
+    let json: { image?: string; remaining?: string | number; error?: string } = {};
+    let serverDown = false;
     try {
-      res = await fetch("/api/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: prompt.trim(), style, mode }) });
-    } catch {
+      const res = await fetch("/api/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: text }) });
+      json = await res.json().catch(() => ({ error: "down" }));
+      if (res.ok && json.image) { if (json.remaining != null) setLeft(json.remaining); add(json.image); setBusy(false); return; }
+      serverDown = res.status === 404 || res.status === 405 || json.error === "not_configured" || json.error === "failed" || json.error === "down";
+    } catch { serverDown = true; }
+    if (!serverDown) {
       setBusy(false);
-      return setError(t.gen_error);
+      const map: Record<string, string> = { refused: t.gen_refused, no_tokens: t.no_tokens, login: t.need_login, daily_cap: t.gen_daily_cap };
+      return setError(map[json.error as string] ?? t.gen_error);
     }
-    const json = await res.json().catch(() => ({}));
+    // 2. no server or no keys yet: the free generator straight from the browser
+    try { add(await freeGenerate(text)); }
+    catch { setError(t.gen_error); }
     setBusy(false);
-    if (res.ok && json.image) { if (json.remaining != null) setLeft(json.remaining); return setResults((r) => [json.image, ...r].slice(0, 12)); }
-    const map: Record<string, string> = { refused: t.gen_refused, not_configured: t.gen_not_configured, no_tokens: t.no_tokens, login: t.need_login, daily_cap: t.gen_daily_cap };
-    setError(map[json.error as string] ?? t.gen_error);
   };
 
   const hand = (key: string, img: string) => {
@@ -60,30 +84,7 @@ export function Generator() {
     <>
       <form onSubmit={run} className="lx-surface-strong mb-8 flex flex-col gap-4 p-6">
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} required maxLength={600} placeholder={t.gen_placeholder} className="lx-input !min-h-[120px] text-base" />
-        <div className="flex flex-wrap items-end gap-3">
-          <fieldset className="m-0 w-full min-w-0 border-0 p-0">
-            <legend className="mb-1 text-[13px] text-ash">{t.gen_style}</legend>
-            <p className="mb-3 mt-0 text-[12px] text-ash">{t.gen_style_hint}</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-              {STYLES.map((st) => (
-                <button key={st.id} type="button" aria-pressed={style === st.name} onClick={() => setStyle(st.name)} className={`flex items-center gap-2.5 rounded-xl border p-2.5 text-start sm:items-start sm:gap-3 sm:p-3 ${style === st.name ? "border-lilac bg-[rgba(196,241,53,.14)]" : "border-[rgba(200,200,210,0.12)] hover:border-[rgba(200,200,210,0.3)]"}`}>
-                  <span className="flex h-11 w-11 flex-none items-center justify-center rounded-lg bg-[#f3f0ea]"><FlashArt name={st.art} size={34} /></span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-ivory">{st.name}</span>
-                    <span className="hidden text-[12px] leading-snug text-mist sm:block">{t[`gst_${st.id}` as keyof typeof t] as string}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <fieldset className="m-0 w-full border-0 p-0">
-            <legend className="mb-2 text-[13px] text-ash">{t.gen_mode}</legend>
-            <div className="grid grid-cols-3 border border-[rgba(255,255,255,.12)]">
-              {(["line", "shaded", "color"] as const).map((k) => (
-                <button key={k} type="button" aria-pressed={mode === k} onClick={() => setMode(k)} className={`min-h-11 px-2 text-[13px] ${mode === k ? "bg-ivory font-semibold text-night" : "text-mist"}`}>{t[`gen_mode_${k}` as keyof typeof t] as string}</button>
-              ))}
-            </div>
-          </fieldset>
+        <div className="flex flex-wrap items-center gap-3">
           <button type="submit" disabled={busy || !prompt.trim()} className="lx-btn lx-btn-primary w-full sm:w-auto">{busy ? t.gen_working : t.gen_btn}</button>
           {left != null && <span className="text-[13px] text-mist">{left === "unlimited" ? t.gen_unlimited : `${t.gen_left}: ${left}`}</span>}
         </div>

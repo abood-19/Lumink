@@ -95,22 +95,25 @@ export async function moderate(text: string, kind: "prompt" | "post"): Promise<b
   }
 }
 
-export type GenMode = "line" | "shaded" | "color";
+import { autoMode, tattooPrompt, type GenMode } from "./genPrompt";
+export type { GenMode };
 
-/** Generates a tattoo design. Returns a data URL. */
-export async function generateLineArt(prompt: string, style: string, mode: GenMode = "line"): Promise<string> {
-  const look =
-    mode === "color"
-      ? "Full-colour tattoo flash artwork with bold clean outlines and saturated tattoo-ink colours, on a pure white background."
-      : mode === "shaded"
-        ? "Black-and-grey tattoo artwork: clean black outlines with smooth grey shading, on a pure white background."
-        : "Clean black line art only, no shading fills, no colour, on a pure white background, high contrast, ready to print as a tattoo stencil.";
-  const instruction = [
-    "Create one tattoo design.",
-    `Subject: ${prompt}`,
-    style ? `Tattoo style: ${style}.` : "",
-    `${look} No text, no watermark, no signature, no skin, no body, no frame, no mockup. Centered, the whole design visible with margin around it.`,
-  ].join("\n");
+/** Image models draw best from English: translate other languages first (cheap text model). */
+async function toEnglish(text: string) {
+  if (!/[^\x00-\x7F]/.test(text)) return text;
+  const q = `Translate this tattoo idea into one short English description for an image model. Keep every detail, add nothing. Reply with the description only.\n---\n${text.slice(0, 600)}`;
+  try {
+    if (CF) { const r = await cfRun("@cf/meta/llama-3.1-8b-instruct", { messages: [{ role: "user", content: q }], max_tokens: 120, temperature: 0.2 }); return (r.result?.response ?? "").trim() || text; }
+    if (KEY) { const parts = await withFallback("text", [{ text: q }], { temperature: 0.2 }); return parts.map((p) => p.text ?? "").join("").trim() || text; }
+  } catch (e) { console.error("translate", e); }
+  return text;
+}
+
+/** Generates a tattoo design; the drawing type and style are read from the description. Returns a data URL. */
+export async function generateLineArt(prompt: string, _style = "", mode?: GenMode): Promise<string> {
+  void _style;
+  const m = mode ?? autoMode(prompt);
+  const instruction = tattooPrompt(await toEnglish(prompt), m);
   // cheapest first; the other provider takes over if one fails or runs out
   const order = (process.env.AI_IMAGE_ORDER ?? "cloudflare,gemini").split(",").map((x) => x.trim());
   let lastErr: unknown = new Error("No image provider configured");

@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   const text = (prompt ?? "").trim();
   if (!text || text.length > 600) return NextResponse.json({ error: "invalid" }, { status: 400 });
   if (!geminiConfigured) return NextResponse.json({ error: "not_configured" }, { status: 503 });
-  const genMode: GenMode = mode === "color" || mode === "shaded" ? mode : "line";
+  const genMode: GenMode | undefined = mode === "color" || mode === "shaded" || mode === "line" ? mode : undefined; // none = decide from the text
 
   // Topic guard: the generator only makes tattoo designs.
   if (!(await moderate(text, "prompt"))) return NextResponse.json({ error: "refused" }, { status: 422 });
