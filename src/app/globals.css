@@ -49,6 +49,8 @@ input[type="range"] { accent-color: var(--color-lilac); width: 100%; }
 @keyframes lx-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 @keyframes lx-draw { 0% { stroke-dashoffset: 720; } 45% { stroke-dashoffset: 0; } 90% { stroke-dashoffset: 0; opacity: 1; } 100% { opacity: 0; stroke-dashoffset: 0; } }
 .lx-tick { animation: lx-tick 34s linear infinite; }
+.lx-tick, .lx-tick-rev { will-change: transform; backface-visibility: hidden; transform: translateZ(0); }
+.lx-paused .lx-tick, .lx-paused .lx-tick-rev, .lx-paused .lx-w1, .lx-paused .lx-w2 { animation-play-state: paused; }
 .lx-tick-rev { animation: lx-tick-rev 40s linear infinite; }
 .lx-w1 { animation: lx-tick 20s linear infinite; }
 .lx-w2 { animation: lx-tick-rev 28s linear infinite; }
@@ -84,6 +86,18 @@ input[type="range"] { accent-color: var(--color-lilac); width: 100%; }
 }
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Rows that are wider than a phone: swipe left/right. A thin bar and soft edges show there is more. */
+.lx-hscroll { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; scrollbar-width: thin; scrollbar-color: rgba(196,241,53,.55) transparent; padding-bottom: 6px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%); }
+.lx-hscroll > * { scroll-snap-align: start; }
+.lx-hscroll::-webkit-scrollbar { height: 3px; }
+.lx-hscroll::-webkit-scrollbar-thumb { background: rgba(196,241,53,.55); border-radius: 3px; }
+.lx-hscroll::-webkit-scrollbar-track { background: transparent; }
+@media (min-width: 1024px) { .lx-hscroll { -webkit-mask-image: none; mask-image: none; } }
+
+/* Grid children may shrink, so one wide row never pushes a page past the screen. */
+:where(.grid) > * { min-width: 0; }
 
 /* Light display cards: soft white so content stands out from the red/black smoke. */
 .lx-card-light {

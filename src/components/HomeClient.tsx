@@ -121,6 +121,19 @@ export function ToolMenu({ tools }: { tools: MenuTool[] }) {
   );
 }
 
+/** Marquees stop while off screen, so phones keep the photos decoded instead of dropping them to black. */
+function usePauseOffscreen<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => el.classList.toggle("lx-paused", !e.isIntersecting), { rootMargin: "200px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return ref;
+}
+
 export type Shot = { src: string; alt: string };
 
 /** Moving strip of tattoo photography, two rows in opposite directions. Pauses on hover; a photo that fails to load is dropped. */
@@ -129,8 +142,9 @@ export function WorkStrip({ shots }: { shots: Shot[] }) {
   const list = shots.filter((s) => !broken.includes(s.src));
   const half = Math.ceil(list.length / 2);
   const rows = [list.slice(0, half), list.slice(half)];
+  const root = usePauseOffscreen<HTMLDivElement>();
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={root} className="flex flex-col gap-3">
       {rows.map((row, r) => row.length > 0 && (
         <div key={r} dir="ltr" className="overflow-hidden">
           <div className={`${r ? "lx-tick-rev" : "lx-tick"} flex w-max gap-3 [animation-duration:90s] hover:[animation-play-state:paused]`}>
@@ -139,9 +153,11 @@ export function WorkStrip({ shots }: { shots: Shot[] }) {
                 <img
                   src={s.src}
                   alt={i < row.length ? s.alt : ""}
-                  loading="lazy"
+                  loading="eager"
+                  decoding="async"
+                  draggable={false}
                   onError={() => setBroken((b) => (b.includes(s.src) ? b : [...b, s.src]))}
-                  className="h-full w-full object-cover grayscale-[35%] transition-[transform,filter] duration-700 group-hover:scale-[1.04] group-hover:grayscale-0"
+                  className="h-full w-full object-cover md:grayscale-[35%] md:transition-[transform,filter] md:duration-700 md:group-hover:scale-[1.04] md:group-hover:grayscale-0"
                 />
               </div>
             ))}
@@ -158,8 +174,9 @@ export type DepthShot = { src: string; alt: string };
 export function DepthGallery({ shots, title, sub }: { shots: DepthShot[]; title: string; sub: string }) {
   const half = Math.ceil(shots.length / 2);
   const rows = [shots.slice(0, half), shots.slice(half)];
+  const root = usePauseOffscreen<HTMLElement>();
   return (
-    <section aria-label={title} className="relative overflow-hidden bg-[#080808] py-24 md:py-32">
+    <section ref={root} aria-label={title} className="relative overflow-hidden bg-[#080808] py-24 md:py-32">
       <div className="mx-auto mb-12 grid max-w-[1320px] gap-6 px-6 md:grid-cols-[minmax(0,1fr)_minmax(0,.8fr)] md:items-end">
         <h2 className="m-0 font-display text-[clamp(32px,4.6vw,64px)] font-bold uppercase leading-[.98] tracking-[-0.01em] text-[#E1E5E5]">{title}</h2>
         <p className="m-0 max-w-[460px] text-[17px] leading-relaxed text-[#C0C4C6] md:justify-self-end">{sub}</p>
@@ -170,7 +187,7 @@ export function DepthGallery({ shots, title, sub }: { shots: DepthShot[]; title:
             <div className={`${r ? "lx-tick-rev" : "lx-tick"} flex w-max gap-4 group-hover/row:[animation-play-state:paused]`} style={{ animationDuration: r ? "90s" : "75s" }}>
               {[...row, ...row].map((s, i) => (
                 <figure key={i} className="group relative m-0 h-[clamp(260px,34vw,440px)] shrink-0 overflow-hidden rounded-[4px] bg-[#111]" style={{ aspectRatio: i % 3 === 1 ? "4 / 3" : "4 / 5" }} aria-hidden={i >= row.length || undefined}>
-                  <img src={s.src} alt={i < row.length ? s.alt : ""} loading="lazy" className="h-full w-full object-cover grayscale-[.5] transition duration-700 group-hover:scale-[1.04] group-hover:grayscale-0" />
+                  <img src={s.src} alt={i < row.length ? s.alt : ""} loading="eager" decoding="async" draggable={false} className="h-full w-full object-cover md:grayscale-[.5] md:transition md:duration-700 md:group-hover:scale-[1.04] md:group-hover:grayscale-0" />
                   <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[rgba(0,0,0,.75)] to-transparent px-4 pb-3 pt-10 text-[12px] uppercase tracking-[.12em] text-[rgba(255,255,255,.75)] opacity-0 transition group-hover:opacity-100">{s.alt}</figcaption>
                 </figure>
               ))}

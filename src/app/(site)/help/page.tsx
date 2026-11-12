@@ -14,7 +14,7 @@ export default async function HelpPage() {
       <section className="mx-auto grid max-w-[1320px] gap-10 px-6 pb-16 pt-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-14">
         <nav aria-label={t.ct_toc} className="lg:sticky lg:top-28 lg:self-start">
           <p className="m-0 mb-3 text-[13px] text-ash">{t.ct_toc}</p>
-          <ol className="no-scrollbar m-0 flex list-none gap-5 overflow-x-auto p-0 lg:flex-col lg:gap-0">
+          <ol className="lx-hscroll m-0 flex list-none gap-5 p-0 lg:flex-col lg:gap-0">
             {toc.map(([id, label]) => (
               <li key={id} className="flex-none"><a href={`#${id}`} className="flex min-h-10 items-center border-s-2 border-[rgba(255,255,255,.1)] ps-3 text-[15px] text-mist hover:border-lilac hover:text-ivory">{label}</a></li>
             ))}

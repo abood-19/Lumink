@@ -26,6 +26,13 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
   const { t } = useI18n();
   const nav = useSiteNav();
   const path = usePathname();
+  useEffect(() => {
+    // Bring the current tab into view in the swipeable row on phones.
+    document.querySelectorAll<HTMLElement>('.lx-hscroll [aria-current="page"]').forEach((el) => {
+      const row = el.parentElement!;
+      row.scrollLeft += el.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - el.offsetWidth) / 2;
+    });
+  }, [path]);
   const [menu, setMenu] = useState(false);
   const active = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
   const [scrolled, setScrolled] = useState(false);
@@ -71,11 +78,12 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
             </button>
           </div>
         </div>
-        <nav aria-label="Sections" className="no-scrollbar flex gap-4 overflow-x-auto px-4 pb-3 lg:hidden">
+        <nav aria-label="Sections" className="lx-hscroll flex gap-4 px-4 pb-3 lg:hidden">
           {nav.map((n) => (
             <Link
               key={n.href}
               href={n.href}
+              aria-current={active(n.href) ? "page" : undefined}
               className={`flex min-h-[38px] flex-none items-center whitespace-nowrap border-b-2 px-1.5 text-[13px] ${active(n.href) ? "border-lilac text-white" : "border-transparent text-mist"}`}
             >
               {n.label}

@@ -42,6 +42,13 @@ function LockNotice() {
 export function StudioShell({ user, demo, children }: { user: ShellUser; demo: boolean; children: React.ReactNode }) {
   const { t } = useI18n();
   const path = usePathname();
+  useEffect(() => {
+    // Bring the current tab into view in the swipeable row on phones.
+    document.querySelectorAll<HTMLElement>('.lx-hscroll [aria-current="page"]').forEach((el) => {
+      const row = el.parentElement!;
+      row.scrollLeft += el.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - el.offsetWidth) / 2;
+    });
+  }, [path]);
   const [demoPaid, setDemoPaid] = useState(false);
   useEffect(() => {
     try { setDemoPaid(localStorage.getItem(DEMO_KEY) === "pro"); } catch {}
@@ -77,9 +84,9 @@ export function StudioShell({ user, demo, children }: { user: ShellUser; demo: b
             )}
           </div>
         </div>
-        <nav aria-label="Tools" className="no-scrollbar flex gap-1.5 overflow-x-auto px-4 pb-3 lg:hidden">
+        <nav aria-label="Tools" className="lx-hscroll flex gap-1.5 px-4 pb-3 lg:hidden">
           {nav.map((n) => (
-            <Link key={n.key} href={n.href} className={`flex min-h-[38px] flex-none items-center whitespace-nowrap rounded-full border border-[rgba(200,200,210,0.13)] px-3.5 text-[13px] ${isActive(n.href) ? "bg-[rgba(196,241,53,.18)] text-white" : "text-mist"}`}>
+            <Link key={n.key} href={n.href} aria-current={isActive(n.href) ? "page" : undefined} className={`flex min-h-[38px] flex-none items-center whitespace-nowrap rounded-full border border-[rgba(200,200,210,0.13)] px-3.5 text-[13px] ${isActive(n.href) ? "bg-[rgba(196,241,53,.18)] text-white" : "text-mist"}`}>
               {n.label}
             </Link>
           ))}

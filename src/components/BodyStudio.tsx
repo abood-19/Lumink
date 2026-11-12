@@ -9,6 +9,7 @@ import { InkSwatches } from "./InkSwatches";
 import { LetteringPanel } from "./LetteringPanel";
 import { recognize, type Pt } from "@/lib/shapes";
 import { HANDOFF_KEY } from "./Simulator2D";
+import { SheetButton, SheetHead, panelClass, useSimFull } from "./simFull";
 import type { BodyStudio as Engine, BrushKind, Gender, LayerName, RegionName } from "@/lib/three/bodyPaint";
 
 /* eslint-disable @next/next/no-img-element */
@@ -33,6 +34,7 @@ type Place = { x: number; y: number; wCm: number; rot: number; src: string; rati
 
 export function BodyStudio() {
   const { t } = useI18n();
+  const { full, sheet, setSheet } = useSimFull();
   const host = useRef<HTMLDivElement>(null);
   const eng = useRef<Engine | null>(null);
   const [ready, setReady] = useState(false);
@@ -442,7 +444,7 @@ export function BodyStudio() {
   const e = eng.current;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={full ? "flex h-full min-h-0 flex-col gap-2" : "flex flex-col gap-3"}>
       {/* body + regions */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-none rounded-xl bg-white/5 p-1" role="group" aria-label={t.bs_body}>
@@ -460,12 +462,12 @@ export function BodyStudio() {
         </label>
       </div>
 
-      <div className="flex flex-col gap-3 lg:flex-row">
+      <div className={`flex flex-col gap-3 lg:flex-row ${full ? "min-h-0 flex-1" : ""}`}>
         {/* stage */}
-        <div className="relative min-w-0 flex-1 overflow-hidden rounded-[16px] border border-[rgba(255,255,255,.08)]" style={{ background: "radial-gradient(120% 90% at 50% 18%, #2b2c27 0%, #121310 55%, #0a0b09 100%)" }}>
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-[16px] border border-[rgba(255,255,255,.08)]" style={{ background: "radial-gradient(120% 90% at 50% 18%, #2b2c27 0%, #121310 55%, #0a0b09 100%)" }}>
           <div
             ref={host}
-            className={`relative h-[58vh] min-h-[380px] w-full select-none sm:h-[68vh] sm:min-h-[460px] ${tool === "move" || tool === "design" ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair"}`}
+            className={`relative w-full select-none ${full ? "h-full min-h-0" : "h-[58vh] min-h-[380px] sm:h-[68vh] sm:min-h-[460px]"} ${tool === "move" || tool === "design" ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair"}`}
             onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
             onContextMenu={(ev) => ev.preventDefault()}
           >
@@ -513,6 +515,7 @@ export function BodyStudio() {
 
           <p className="pointer-events-none absolute inset-x-0 bottom-0 m-0 px-3 pb-3 text-center text-[12px] text-white/60">{hint || (locked ? t.bs_hint_locked : tool === "move" ? t.bs_hint_move : tool === "design" ? t.bs_hint_design : tool === "tint" ? t.bs_hint_tint : t.bs_hint_draw)}</p>
 
+          {full && !sheet && <SheetButton label={t.sim_tools} onClick={() => setSheet(true)} className={place ? "end-3 top-[72px]" : "bottom-16 end-3"} />}
           {(!ready || swapping) && !fail && <div className="absolute inset-0 flex items-center justify-center"><span className="h-7 w-7 animate-spin rounded-full border-2 border-lilac border-t-transparent" /></div>}
           {fail && (
             <div role="alert" className="absolute inset-x-4 top-1/2 m-0 flex -translate-y-1/2 flex-col items-center gap-3 rounded-[10px] border border-line bg-[rgba(10,11,9,.92)] px-4 py-5 text-center text-sm text-ivory">
@@ -523,7 +526,8 @@ export function BodyStudio() {
         </div>
 
         {/* side panel */}
-        <aside className="flex w-full min-w-0 flex-col gap-5 rounded-2xl border border-white/10 bg-[#121311] p-4 sm:p-5 lg:w-[320px]">
+        <aside className={`flex w-full min-w-0 flex-col gap-5 rounded-2xl border border-white/10 bg-[#121311] p-4 sm:p-5 lg:w-[320px] ${panelClass(full, sheet)}`}>
+          {full && <SheetHead label={t.sim_tools} onClose={() => setSheet(false)} />}
           {place ? (
             <section className="flex flex-col gap-4">
               <p className="m-0 text-[13px] text-ash">{t.bs_design}</p>
@@ -594,7 +598,7 @@ export function BodyStudio() {
       </div>
 
       {stencil && (
-        <div role="dialog" aria-modal="true" aria-label={t.bs_stencil} className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,.7)] p-4" onClick={() => setStencil(null)}>
+        <div role="dialog" aria-modal="true" aria-label={t.bs_stencil} className="fixed inset-0 z-[140] flex items-center justify-center bg-[rgba(0,0,0,.7)] p-4" onClick={() => setStencil(null)}>
           <div className="flex max-h-[92vh] w-full max-w-[720px] flex-col gap-4 rounded-2xl bg-[#121310] p-5" onClick={(ev) => ev.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <p className="m-0 font-display text-lg font-semibold">{t.bs_stencil}</p>

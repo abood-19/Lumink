@@ -508,5 +508,8 @@
  "bs_remove": "Remove tattoo",
  "bs_remove_confirm": "Remove the whole tattoo from this body?",
  "bs_hint_locked": "The body is locked: it won't move while you work. Tap the lock to move it again.",
- "bs_hint_tint": "Paint over the tattoo to color it. Color only lands on the ink, never on bare skin."
+ "bs_hint_tint": "Paint over the tattoo to color it. Color only lands on the ink, never on bare skin.",
+ "sim_full": "Full screen",
+ "sim_full_exit": "Exit",
+ "sim_tools": "Tools"
 }

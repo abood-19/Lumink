@@ -508,5 +508,8 @@
  "bs_remove": "Tatuni o‘chirish",
  "bs_remove_confirm": "Bu tanadagi butun tatu o‘chirilsinmi?",
  "bs_hint_locked": "Tana qotirilgan: ishlayotganingizda qimirlamaydi. Qayta aylantirish uchun qulfni bosing.",
- "bs_hint_tint": "Tatuni bo‘yash uchun ustidan chizing. Rang faqat tatuga tushadi, toza teriga emas."
+ "bs_hint_tint": "Tatuni bo‘yash uchun ustidan chizing. Rang faqat tatuga tushadi, toza teriga emas.",
+ "sim_full": "To‘liq ekran",
+ "sim_full_exit": "Chiqish",
+ "sim_tools": "Asboblar"
 }

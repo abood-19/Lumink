@@ -52,9 +52,13 @@ export function SmokeBackground() {
     const reduce = false;
     const slow = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.5 : 1;
     const t0 = performance.now();
-    let raf = 0;
+    // Phones: half resolution and ~24 fps, so the page's photos and the simulator keep the GPU memory they need.
+    const phone = window.matchMedia("(pointer: coarse)").matches;
+    let raf = 0, last = 0;
     const frame = (now: number) => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.25) * 0.75;
+      if (phone && now - last < 40) { raf = requestAnimationFrame(frame); return; }
+      last = now;
+      const dpr = phone ? 0.5 : Math.min(window.devicePixelRatio || 1, 1.25) * 0.75;
       const w = Math.max(1, Math.floor(cv.clientWidth * dpr));
       const h = Math.max(1, Math.floor(cv.clientHeight * dpr));
       if (cv.width !== w || cv.height !== h) {

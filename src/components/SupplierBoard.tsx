@@ -24,7 +24,7 @@ export function SupplierBoard({ groups, open }: { groups: Group[]; open: string 
         </div>
       </div>
 
-      <div role="tablist" className="mb-2 flex gap-6 overflow-x-auto border-b border-[rgba(255,255,255,.1)]">
+      <div role="tablist" className="lx-hscroll mb-2 flex gap-6 border-b border-[rgba(255,255,255,.1)]">
         {groups.map((g, i) => (
           <button key={g.key} role="tab" type="button" aria-selected={tab === i} onClick={() => setTab(i)} className={`-mb-px flex min-h-12 flex-none items-center gap-2 border-b-2 text-[15px] font-semibold transition-colors ${tab === i ? "border-lilac text-ivory" : "border-transparent text-mist hover:text-ivory"}`}>
             {g.title}<span className="text-[13px] font-normal text-ash">{g.items.length}</span>

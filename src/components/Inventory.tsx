@@ -37,7 +37,7 @@ export function Inventory() {
       </form>
 
       {items.length === 0 ? <p className="text-mist">{t.empty}</p> : (
-        <div className="lx-surface overflow-x-auto">
+        <div className="lx-surface lx-hscroll">
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="text-start text-xs text-ash">

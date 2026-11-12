@@ -7,6 +7,7 @@ import { compositeInkBox, type Placement } from "@/lib/inkComposite";
 import { INK_COLORS, applyFills, prepareInk, type Fill } from "@/lib/inkPrep";
 import { LetteringPanel } from "./LetteringPanel";
 import { InkSwatches } from "./InkSwatches";
+import { SheetButton, SheetHead, panelClass, useSimFull } from "./simFull";
 
 /** Key used to hand a design from the generator or stencil studio to the simulator. */
 export const HANDOFF_KEY = "lumink-handoff-design";
@@ -28,6 +29,7 @@ type Pose = { x: number; y: number; sizeCm: number; rot: number };
  */
 export function Simulator2D() {
   const { t } = useI18n();
+  const { full, sheet, setSheet } = useSimFull();
   const stage = useRef<HTMLDivElement>(null);
   const photoCv = useRef<HTMLCanvasElement>(null);
   const designCv = useRef<HTMLCanvasElement>(null);
@@ -282,12 +284,12 @@ export function Simulator2D() {
 
   const editing = mode === "edit";
   return (
-    <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className={`grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] ${full ? "h-full min-h-0 grid-rows-[minmax(0,1fr)] lg:gap-3" : ""}`}>
       {/* stage */}
-      <div className="relative min-w-0 overflow-hidden rounded-2xl border border-white/10" style={{ background: BG }}>
+      <div className="relative min-h-0 min-w-0 overflow-hidden rounded-2xl border border-white/10" style={{ background: BG }}>
         <div
           ref={stage}
-          className={`relative flex h-[60vh] min-h-[360px] touch-none select-none items-center justify-center overflow-hidden sm:h-[68vh] ${editing ? (paint === "parts" ? "cursor-cell" : "cursor-grab active:cursor-grabbing") : "cursor-zoom-in"}`}
+          className={`relative flex touch-none select-none items-center justify-center overflow-hidden ${full ? "h-full min-h-0" : "h-[60vh] min-h-[360px] sm:h-[68vh]"} ${editing ? (paint === "parts" ? "cursor-cell" : "cursor-grab active:cursor-grabbing") : "cursor-zoom-in"}`}
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -342,11 +344,13 @@ export function Simulator2D() {
           )}
         </div>
         {mode === "result" && zoom.s === 1 && <p className="pointer-events-none absolute inset-x-0 top-3 m-0 text-center text-[12px] text-white/70">{t.sim_zoom_hint}</p>}
+        {full && !sheet && <SheetButton label={t.sim_tools} onClick={() => setSheet(true)} className="right-3 top-3" />}
         {error && <p role="alert" className="absolute inset-x-4 top-4 m-0 rounded-lg bg-red-500/15 px-4 py-3 text-sm text-[#ffc9cc]">{error}</p>}
       </div>
 
       {/* controls */}
-      <aside className="flex min-w-0 flex-col gap-5 rounded-2xl border border-white/10 bg-[#121311] p-4 sm:p-5">
+      <aside className={`flex min-w-0 flex-col gap-5 rounded-2xl border border-white/10 bg-[#121311] p-4 sm:p-5 ${full ? "lg:overflow-y-auto" : ""} ${panelClass(full, sheet)}`}>
+        {full && <SheetHead label={t.sim_tools} onClose={() => setSheet(false)} />}
         <label className="relative flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl bg-white text-[15px] font-semibold text-[#0a0b09]">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /><circle cx="12" cy="13" r="3.5" stroke="currentColor" strokeWidth="1.8" /></svg>
           {t.sim_client_photo}
@@ -355,7 +359,7 @@ export function Simulator2D() {
 
         <section>
           <p className="mb-2 mt-0 text-[13px] text-ash">{t.sim_step2}</p>
-          <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:grid lg:grid-cols-4 lg:overflow-visible">
+          <div className="lx-hscroll -mx-1 flex gap-2 px-1 pb-1 lg:grid lg:grid-cols-4 lg:overflow-visible">
             <label aria-label={t.sim_design} title={t.sim_design} className={`relative flex h-16 w-16 flex-none cursor-pointer items-center justify-center rounded-xl border border-dashed border-white/25 text-ivory lg:aspect-square lg:h-auto lg:w-auto ${designId === "custom" ? "outline outline-2 outline-offset-2 outline-lilac" : ""}`}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
               {fileInput(async (file) => pickDesign(await fileToDataUrl(file), "custom"))}
