@@ -15,7 +15,7 @@ export const HANDOFF_KEY = "lumink-handoff-design";
 const DESIGNS = ["tribal", "oni", "spine", "mask", "mandala", "geometry", "lettering", "band"].map((id) => ({ id, src: `/designs/${id}.png` }));
 const SAMPLE = { src: "/photos/arm-left.png", pxPerCm: 212 / 10.5 };
 const BG = "#141513";
-const RESULT_LONG_SIDE = 3000;
+const RESULT_PIXELS = 9e6;
 const mobile = typeof window !== "undefined" && matchMedia("(pointer: coarse)").matches;
 
 type Photo = { img: HTMLImageElement; w: number; h: number; pxPerCm: number };
@@ -44,7 +44,7 @@ export function Simulator2D() {
   const [lettering, setLettering] = useState(false);
   const [look, setLook] = useState({ strength: 0.7, sharp: 0.75, depth: 0.45 });
   // preview ink (light enough to move at 60 fps); the result is rebuilt at full resolution
-  const design = useMemo(() => (designImg ? applyFills(prepareInk(designImg, color, 900), fills) : null), [designImg, color, fills]);
+  const design = useMemo(() => (designImg ? applyFills(prepareInk(designImg, color, 2048), fills) : null), [designImg, color, fills]);
   const [designId, setDesignId] = useState("tribal");
   const [pose, setPose] = useState<Pose>({ x: 0, y: 0, sizeCm: 8, rot: 0 });
   const [mode, setMode] = useState<"edit" | "rendering" | "result">("edit");
@@ -251,7 +251,7 @@ export function Simulator2D() {
       const mask = skinMask(H.probe, pk, { x: (P.x - half) * pk, y: (P.y - half) * pk, x1: (P.x + half) * pk, y1: (P.y + half) * pk });
       const maskData = mask ? mask.getContext("2d", { willReadFrequently: true })!.getImageData(0, 0, mask.width, mask.height) : null;
       const limb = findLimb(H.probe, pk, P, rot, w, maskData);
-      const ink2 = applyFills(prepareInk(designImg!, color, mobile ? 1600 : 2048), fills);
+      const ink2 = applyFills(prepareInk(designImg!, color, mobile ? 2600 : 4096), fills);
       const box = wrapOnto(ic, ink2, P, w, h, rot, limb, (1 - look.sharp) * 1.1);
       if (mask) { ic.save(); ic.globalCompositeOperation = "destination-in"; ic.imageSmoothingQuality = "high"; ic.drawImage(mask, 0, 0, ink.width, ink.height); ic.restore(); }
       const bw = box.x1 - box.x, bh = box.y1 - box.y;
@@ -416,7 +416,9 @@ export function Simulator2D() {
 
 /** Full-resolution skin buffers for the compositor, plus a small blurred copy to read the body's shape from. */
 function prepareSkin(photo: Photo) {
-  const k = Math.min(3, (mobile ? 2200 : RESULT_LONG_SIDE) / Math.max(photo.w, photo.h));
+  // A pixel budget (not a long side), so tall narrow photos and big tattoos still get enough pixels to zoom into.
+  const budget = mobile ? 4.2e6 : RESULT_PIXELS;
+  const k = Math.min(4, Math.sqrt(budget / (photo.w * photo.h)), (mobile ? 4096 : 6000) / Math.max(photo.w, photo.h));
   const W = Math.round(photo.w * k), H = Math.round(photo.h * k);
   const base = document.createElement("canvas"); base.width = W; base.height = H;
   const bg = base.getContext("2d", { willReadFrequently: true })!;
@@ -426,7 +428,7 @@ function prepareSkin(photo: Photo) {
   const blurC = document.createElement("canvas"); blurC.width = W; blurC.height = H;
   const blg = blurC.getContext("2d", { willReadFrequently: true })!;
   blg.filter = `blur(${Math.max(4, Math.round(W / 140))}px)`; blg.drawImage(base, 0, 0);
-  const probeK = Math.min(1, 520 / Math.max(W, H));
+  const probeK = Math.min(1, 900 / Math.max(W, H));
   const pc = document.createElement("canvas"); pc.width = Math.round(W * probeK); pc.height = Math.round(H * probeK);
   const pg = pc.getContext("2d", { willReadFrequently: true })!;
   pg.filter = "blur(1.5px)"; pg.drawImage(base, 0, 0, pc.width, pc.height);
@@ -497,6 +499,9 @@ function wrapOnto(ink: CanvasRenderingContext2D, design: CanvasImageSource & { w
   const fw = Math.max(1, Math.round(w)), fh = Math.max(1, Math.round(h));
   const flat = document.createElement("canvas"); flat.width = fw; flat.height = fh;
   const fg = flat.getContext("2d", { willReadFrequently: true })!; fg.imageSmoothingQuality = "high"; fg.drawImage(design, 0, 0, fw, fh);
+  // Enlarged past the design's own pixels: restore crisp line edges that plain stretching softens.
+  const up = fw / design.width;
+  if (up > 1.15) sharpenAlpha(fg, fw, fh, Math.min(6, up * 0.6));
   let local: HTMLCanvasElement = flat, ox = fw / 2, cx = P.x, cy = P.y;
   if (limb) {
     const r = limb.r, u0 = -limb.c;
@@ -586,6 +591,21 @@ function skinMask(probe: ImageData, _pk: number, near: { x: number; y: number; x
   for (let i = 3; i < D.length; i += 4) D[i] = Math.min(255, Math.max(0, (D[i] - 70) * 1.9));
   sg.putImageData(sd, 0, 0);
   return s;
+}
+
+/** Unsharp mask on the ink's alpha only: edges get their bite back, solid areas and grey shading stay as they were. */
+function sharpenAlpha(g: CanvasRenderingContext2D, w: number, h: number, radius: number) {
+  const src = g.getImageData(0, 0, w, h), S = src.data;
+  const b = document.createElement("canvas"); b.width = w; b.height = h;
+  const bg = b.getContext("2d", { willReadFrequently: true })!;
+  bg.filter = `blur(${radius.toFixed(2)}px)`; bg.drawImage(g.canvas, 0, 0);
+  const B = bg.getImageData(0, 0, w, h).data;
+  for (let i = 3; i < S.length; i += 4) {
+    const a = S[i], d = a - B[i];
+    if (d === 0) continue;
+    const v = a + d * 1.1; S[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+  }
+  g.putImageData(src, 0, 0);
 }
 
 function Range({ label, value, min, max, unit, onChange, step = 1 }: { label: string; value: number; min: number; max: number; unit: string; onChange: (n: number) => void; step?: number }) {
