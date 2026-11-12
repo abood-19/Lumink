@@ -4,7 +4,7 @@ import { Arrow } from "@/components/Decor";
 import { AdsStrip } from "@/components/HomeExtras";
 import { CrossBands, buildTools } from "@/components/HomeBlocks";
 import { DepthGallery, ToolMenu, type DepthShot } from "@/components/HomeClient";
-import { InkHero } from "@/components/InkHero";
+import { InkHero, PenShowcase } from "@/components/InkHero";
 import { PLANS } from "@/lib/plans";
 
 /* eslint-disable @next/next/no-img-element */
@@ -94,8 +94,10 @@ export default async function Home() {
 
       <AdsStrip t={t} />
 
+      <PenShowcase />
+
       {/* CTA */}
-      <section className="mt-10 bg-lilac text-night">
+      <section className="bg-lilac text-night">
         <div className="mx-auto grid max-w-[1320px] items-center gap-10 px-6 py-20 md:grid-cols-[minmax(0,1.2fr)_minmax(0,.8fr)]">
           <div>
             <h2 className="m-0 font-display text-[clamp(32px,4.4vw,64px)] font-bold leading-[1] tracking-[-.02em]">{t.cta_t}</h2>
